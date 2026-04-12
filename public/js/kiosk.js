@@ -1,114 +1,144 @@
 // kiosk.js — Touchless Kiosk P2
-// Reconocimiento de gestos con MediaPipe + voz con Web Speech API + Socket.IO
+// Gestos con MediaPipe Hands + voz con Web Speech API + Socket.IO
 
 const socket = io({ query: { type: 'kiosk' } });
 
-let menuData       = [];
-let orderState     = {};
-let cameraHidden   = false;
-
-// Temporización de gestos
-const HOLD_MS       = 800;   // ms para seleccionar con el dedo
-const COOLDOWN_MS   = 1200;  // pausa entre gestos para evitar disparos dobles
-const RESET_HOLD_MS = 2000;  // ms para el gesto de reset (V)
-
-// Sistema de confirmación por frames.
-// Un gesto solo se dispara si se mantiene estable durante CONFIRM_FRAMES frames
-// consecutivos. Evita activaciones accidentales al pasar entre posturas.
-const CONFIRM_FRAMES = 16;
-let confirmGesture = null;
-let confirmCount   = 0;
-
-// Devuelve true la primera vez que el gesto lleva CONFIRM_FRAMES frames seguidos.
-function gestureConfirmed(gesture) {
-  if (gesture !== confirmGesture) {
-    confirmGesture = gesture;
-    confirmCount   = 1;
-    return false;
-  }
-  confirmCount++;
-  return confirmCount === CONFIRM_FRAMES;
-}
-
-let gestureHoldStart = null;
-let gestureCooldown  = false;
+let menuData         = [];
+let orderState       = {};
+let cameraHidden     = false;
 let presenceDetected = false;
 
-// Navegación por inclinación de muñeca.
-// Mide el ángulo del eje muñeca(lm[0])→palma(lm[9]) respecto a la vertical.
-// Si se mantiene inclinado más de TILT_ANGLE_DEG durante TILT_HOLD_MS, navega.
-const TILT_ANGLE_DEG = 28;
-const TILT_HOLD_MS   = 420;
+// Temporización
+// GESTURE_HOLD_MS: tiempo mínimo para activar thumb_up / open_palm.
+// Es el único mecanismo anti-accidental: simple, visible y consistente.
+const GESTURE_HOLD_MS = 600;
+const POINT_HOLD_MS   = 800;
+const RESET_HOLD_MS   = 2000;
+const COOLDOWN_MS     = 1000;
 
-let tiltDirection  = null;
-let tiltStartTime  = null;
-let tiltFired      = false;
+let activeGesture   = null;
+let holdStart       = null;
+let gestureCooldown = false;
 
-function handleTilt(lm, gesture) {
-  if (gesture === 'point' || gesture === 'thumb_up') {
-    resetTilt();
+
+// Clasificación de gestos
+//
+// Para los 4 dedos normales usamos tip.y < pip.y (punta por encima del nudillo).
+// Funciona bien porque ambos puntos del mismo dedo se proyectan igual bajo perspectiva.
+//
+// Para el PULGAR no usamos Y porque su eje de movimiento es horizontal.
+// Usamos la distancia lateral entre la punta del pulgar (lm[4]) y la base del
+// meñique (lm[17]): cuando el pulgar está extendido hacia fuera esa distancia
+// es grande; cuando está recogido dentro del puño es pequeña.
+// Normalizamos con el ancho de la palma (lm[5] a lm[17]) para ser independientes
+// del tamaño de mano y la distancia a la cámara.
+//
+// Índices MediaPipe usados:
+//   pulgar tip=4, mcp=2, base meñique=17, base índice=5
+//   índice:  pip=6  tip=8
+//   corazón: pip=10 tip=12
+//   anular:  pip=14 tip=16
+//   meñique: pip=18 tip=20
+
+function up(lm, tip, pip) { return lm[tip].y < lm[pip].y; }
+function dn(lm, tip, pip) { return lm[tip].y > lm[pip].y; }
+
+function palmWidth(lm) {
+  const dx = lm[5].x - lm[17].x;
+  const dy = lm[5].y - lm[17].y;
+  return Math.hypot(dx, dy) || 0.001;
+}
+
+function thumbSpread(lm) {
+  const dx = lm[4].x - lm[17].x;
+  const dy = lm[4].y - lm[17].y;
+  return Math.hypot(dx, dy) / palmWidth(lm);
+}
+
+// Pulgar arriba: pulgar bien separado de la palma + los 4 dedos cerrados.
+// El umbral 1.4 equivale a que la punta esté al menos 1.4× el ancho de la palma
+// de distancia del lado del meñique — imposible de cumplir con el pulgar dentro.
+function isThumbUp(lm) {
+  if (thumbSpread(lm) < 1.4)  return false;
+  if (up(lm, 8,  6))          return false;
+  if (up(lm, 12, 10))         return false;
+  if (up(lm, 16, 14))         return false;
+  if (up(lm, 20, 18))         return false;
+  return true;
+}
+
+// Palma abierta: los 4 dedos extendidos.
+function isOpenPalm(lm) {
+  return up(lm, 8, 6) && up(lm, 12, 10) && up(lm, 16, 14) && up(lm, 20, 18);
+}
+
+// Señalar: solo el índice extendido.
+function isPoint(lm) {
+  return up(lm, 8, 6) && dn(lm, 12, 10) && dn(lm, 16, 14) && dn(lm, 20, 18);
+}
+
+// Tres dedos: índice, corazón y anular extendidos, meñique cerrado.
+// Gesto de navegación "anterior" (intuitivo: mostrar dedos para pasar página).
+function isThreeFingers(lm) {
+  return up(lm, 8, 6) && up(lm, 12, 10) && up(lm, 16, 14) && dn(lm, 20, 18);
+}
+
+// Victory/V: índice y corazón extendidos, anular y meñique cerrados.
+// Gesto de navegación "siguiente".
+function isVictory(lm) {
+  return up(lm, 8, 6) && up(lm, 12, 10) && dn(lm, 16, 14) && dn(lm, 20, 18);
+}
+
+// El orden importa: gestos más específicos primero.
+function classifyGesture(lm) {
+  if (isThumbUp(lm))      return 'thumb_up';
+  if (isThreeFingers(lm)) return 'three';
+  if (isVictory(lm))      return 'victory';
+  if (isOpenPalm(lm))     return 'open_palm';
+  if (isPoint(lm))        return 'point';
+  return 'other';
+}
+
+
+// Navegación por número de dedos.
+// victory (2 dedos) → siguiente categoría.
+// three   (3 dedos) → categoría anterior.
+// Requiere mantener el gesto NAV_HOLD_MS ms para evitar accidentales.
+const NAV_HOLD_MS = 500;
+
+let navGesture = null;
+let navStart   = null;
+let navFired   = false;
+
+function handleNav(gesture) {
+  const isNav = gesture === 'victory' || gesture === 'three';
+  if (!isNav) { navGesture = null; navStart = null; navFired = false; return; }
+  if (gesture !== navGesture) {
+    navGesture = gesture;
+    navStart   = Date.now();
+    navFired   = false;
     return;
   }
-
-  const dx = lm[9].x - lm[0].x;
-  const dy = lm[9].y - lm[0].y;
-  const angleDeg = Math.atan2(dx, -dy) * (180 / Math.PI);
-
-  // La cámara está espejada: inclinarse a la derecha da ángulo negativo.
-  let currentTilt = null;
-  if (angleDeg > TILT_ANGLE_DEG)  currentTilt = 'left';
-  if (angleDeg < -TILT_ANGLE_DEG) currentTilt = 'right';
-
-  if (currentTilt === null) { resetTilt(); return; }
-
-  if (currentTilt !== tiltDirection) {
-    tiltDirection = currentTilt;
-    tiltStartTime = Date.now();
-    tiltFired     = false;
-    return;
-  }
-
-  if (!tiltFired && !gestureCooldown && (Date.now() - tiltStartTime) >= TILT_HOLD_MS) {
-    socket.emit('gesture:navigate', { direction: tiltDirection });
-    showToast(tiltDirection === 'right' ? 'Siguiente categoría ▶' : '◀ Categoría anterior');
-    tiltFired = true;
+  if (navFired || gestureCooldown) return;
+  const prog = Math.min((Date.now() - navStart) / NAV_HOLD_MS, 1);
+  setProgressBar(prog);
+  if (prog >= 1) {
+    const dir = gesture === 'victory' ? 'right' : 'left';
+    socket.emit('gesture:navigate', { direction: dir });
+    showToast(dir === 'right' ? 'Siguiente categoría ▶' : '◀ Categoría anterior');
+    navFired = true;
     triggerCooldown();
-    setTimeout(resetTilt, COOLDOWN_MS);
   }
 }
 
-function resetTilt() {
-  tiltDirection = null;
-  tiltStartTime = null;
-  tiltFired     = false;
+
+// Hold universal: devuelve progreso 0-1 para el gesto activo.
+// Si el gesto cambia, reinicia el contador.
+function updateHold(gesture, ms) {
+  if (gesture !== activeGesture) { activeGesture = gesture; holdStart = Date.now(); }
+  return Math.min((Date.now() - holdStart) / ms, 1);
 }
 
-// Gesto de reset total: V mantenida RESET_HOLD_MS ms.
-// Difícil de hacer accidentalmente; muestra progreso en el label de cámara.
-let resetHoldStart = null;
-
-function handleResetGesture(gesture) {
-  if (gesture !== 'victory') {
-    resetHoldStart = null;
-    return;
-  }
-
-  if (resetHoldStart === null) {
-    resetHoldStart = Date.now();
-    return;
-  }
-
-  const elapsed  = Date.now() - resetHoldStart;
-  const progress = Math.min(elapsed / RESET_HOLD_MS, 1);
-  gestureLabel.textContent = `reset ${Math.round(progress * 100)}%`;
-
-  if (elapsed >= RESET_HOLD_MS) {
-    socket.emit('session:reset');
-    showToast('Pedido eliminado');
-    resetHoldStart = null;
-    triggerCooldown();
-  }
-}
 
 // Referencias al DOM
 const overlayIdle     = document.getElementById('overlay-idle');
@@ -127,7 +157,7 @@ const voiceTranscript = document.getElementById('voice-transcript');
 const categoryBtns    = document.querySelectorAll('.cat-btn');
 
 
-// Eventos de Socket.IO
+// Eventos Socket.IO
 
 socket.on('state:sync', (state) => {
   orderState = state;
@@ -149,7 +179,7 @@ socket.on('ui:item-added', (item) => {
 
 socket.on('ui:confirm-prompt', () => {
   confirmModal.classList.remove('hidden');
-  modalTotal.textContent = 'Total: ' + orderState.total.toFixed(2) + ' €';
+  modalTotal.textContent = orderState.total.toFixed(2) + ' €';
 });
 
 socket.on('ui:order-done', ({ orderNumber }) => {
@@ -173,7 +203,7 @@ socket.on('ui:voice-feedback', ({ transcript }) => {
 socket.on('trigger:cancel', () => sendCancel());
 
 
-// Renderizado de menú y pedido
+// Renderizado
 
 function renderMenu() {
   const cat   = orderState.currentCategory || 'burgers';
@@ -181,7 +211,7 @@ function renderMenu() {
   menuGrid.innerHTML = '';
   items.forEach(item => {
     const card = document.createElement('div');
-    card.className = 'menu-card';
+    card.className  = 'menu-card';
     card.dataset.id = item.id;
     card.innerHTML =
       '<div class="item-emoji">' + item.emoji + '</div>' +
@@ -211,41 +241,35 @@ function renderOrder() {
       '<button class="row-remove" onclick="removeItem(\'' + item.id + '\')">×</button>';
     orderItemsEl.appendChild(row);
   });
-
   const newTotal = orderState.total.toFixed(2) + ' €';
   if (totalPriceEl.textContent !== newTotal) {
     totalPriceEl.textContent = newTotal;
     totalPriceEl.classList.remove('bump');
-    void totalPriceEl.offsetWidth; // fuerza reflow para reiniciar la animación
+    void totalPriceEl.offsetWidth;
     totalPriceEl.classList.add('bump');
   }
 }
 
 function syncCategoryUI(cat) {
-  categoryBtns.forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.cat === cat);
-  });
+  categoryBtns.forEach(btn => btn.classList.toggle('active', btn.dataset.cat === cat));
 }
 
 function handleStatusChange(status) {
   if (status === 'confirming') {
     confirmModal.classList.remove('hidden');
-    modalTotal.textContent = 'Total: ' + orderState.total.toFixed(2) + ' €';
+    modalTotal.textContent = orderState.total.toFixed(2) + ' €';
   } else {
     confirmModal.classList.add('hidden');
   }
 }
 
 
-// Acciones enviadas al servidor
+// Acciones al servidor
 function selectItem(id)    { socket.emit('gesture:select',   { itemId: id }); }
 function sendNavigate(dir) { socket.emit('gesture:navigate', { direction: dir }); }
 function sendConfirm()     { socket.emit('gesture:confirm'); }
 function sendCancel()      { socket.emit('gesture:cancel'); }
 function removeItem(id)    { socket.emit('order:remove-item', { itemId: id }); }
-
-
-// Toast de notificación
 
 let toastTimer;
 function showToast(msg) {
@@ -255,133 +279,99 @@ function showToast(msg) {
   toastTimer = setTimeout(() => toast.classList.add('hidden'), 2500);
 }
 
-
-// Utilidades geométricas para landmarks
-
-function dist(a, b) {
-  return Math.hypot(a.x - b.x, a.y - b.y, (a.z || 0) - (b.z || 0));
+function triggerCooldown() {
+  gestureCooldown = true;
+  activeGesture   = null;
+  holdStart       = null;
+  setTimeout(() => { gestureCooldown = false; }, COOLDOWN_MS);
 }
 
-// Distancia muñeca–palma: normaliza el resto de medidas al tamaño de la mano.
-function handSize(lm) {
-  return dist(lm[0], lm[9]) || 0.001;
+function clearAllHoldRings() {
+  document.querySelectorAll('.hold-ring').forEach(r => r.style.display = 'none');
 }
 
-// True si la punta del dedo está claramente más lejos de la muñeca que su PIP.
-function isFingerExtended(lm, tipIdx, pipIdx) {
-  const sz = handSize(lm);
-  return (dist(lm[tipIdx], lm[0]) - dist(lm[pipIdx], lm[0])) / sz > 0.13;
-}
 
-// True si la punta del dedo está cerca del centro de la palma.
-function isFingerCurled(lm, tipIdx) {
-  return dist(lm[tipIdx], lm[9]) / handSize(lm) < 0.85;
-}
+// Cursor gestual y barra de progreso
 
-function isThumbExtended(lm) {
-  const sz        = handSize(lm);
-  const farEnough = (dist(lm[4], lm[0]) - dist(lm[3], lm[0])) / sz > 0.12;
-  const spreadOut = dist(lm[4], lm[5]) / sz > 0.40;
-  return farEnough && spreadOut;
-}
+let pointerEl    = null;
+let progressBar  = null;
 
-// Pulgar arriba: pulgar extendido + los cuatro dedos cerrados + punta por encima de la muñeca.
-function isThumbUp(lm) {
-  if (!isThumbExtended(lm)) return false;
-
-  if (!isFingerCurled(lm, 8))  return false;
-  if (!isFingerCurled(lm, 12)) return false;
-  if (!isFingerCurled(lm, 16)) return false;
-  if (!isFingerCurled(lm, 20)) return false;
-
-  if (isFingerExtended(lm, 8,  6))  return false;
-  if (isFingerExtended(lm, 12, 10)) return false;
-  if (isFingerExtended(lm, 16, 14)) return false;
-  if (isFingerExtended(lm, 20, 18)) return false;
-
-  if (lm[4].y > lm[0].y - 0.10) return false;
-  if (lm[4].y > lm[2].y - 0.06) return false;
-  if (lm[4].y > lm[5].y) return false;
-
-  return true;
-}
-
-// Palma abierta: los cuatro dedos extendidos y el corazón genuinamente largo.
-function isOpenPalm(lm) {
-  if (!isFingerExtended(lm, 8,  6))  return false;
-  if (!isFingerExtended(lm, 12, 10)) return false;
-  if (!isFingerExtended(lm, 16, 14)) return false;
-  if (!isFingerExtended(lm, 20, 18)) return false;
-  if (dist(lm[12], lm[0]) / handSize(lm) < 1.4) return false;
-  return true;
-}
-
-// Señalar: mide la linealidad del índice (lm[5]→8) en lugar de distancia a la muñeca,
-// así funciona también cuando la mano apunta horizontalmente hacia la cámara.
-function isPoint(lm) {
-  if (isFingerExtended(lm, 12, 10)) return false;
-  if (isFingerExtended(lm, 16, 14)) return false;
-  if (isFingerExtended(lm, 20, 18)) return false;
-  if (!isFingerCurled(lm, 12))      return false;
-  if (!isFingerCurled(lm, 16))      return false;
-
-  const A  = lm[5];
-  const B  = lm[8];
-  const ab = Math.hypot(B.x - A.x, B.y - A.y, (B.z || 0) - (A.z || 0));
-  if (ab < 0.001) return false;
-
-  // Distancia perpendicular del punto P a la recta A→B.
-  function pointToLineDist(P) {
-    const t = ((P.x-A.x)*(B.x-A.x) + (P.y-A.y)*(B.y-A.y) + ((P.z||0)-(A.z||0))*((B.z||0)-(A.z||0))) / (ab * ab);
-    const dx = A.x + t*(B.x-A.x) - P.x;
-    const dy = A.y + t*(B.y-A.y) - P.y;
-    const dz = (A.z||0) + t*((B.z||0)-(A.z||0)) - (P.z||0);
-    return Math.hypot(dx, dy, dz);
+function getOrCreatePointer() {
+  if (!pointerEl) {
+    pointerEl = document.createElement('div');
+    pointerEl.style.cssText =
+      'position:fixed;width:20px;height:20px;border-radius:50%;' +
+      'background:rgba(0,0,0,0.10);border:2px solid #111;' +
+      'pointer-events:none;z-index:999;transform:translate(-50%,-50%);display:none;';
+    document.body.appendChild(pointerEl);
   }
-
-  const sz = handSize(lm);
-  if (pointToLineDist(lm[6]) / sz > 0.22) return false;
-  if (pointToLineDist(lm[7]) / sz > 0.22) return false;
-  if (ab / sz < 0.40) return false; // descarta dedos muy escorzados
-
-  return true;
+  return pointerEl;
 }
 
-// Victory/V: índice y corazón extendidos y separados, anular y meñique recogidos.
-function isVictory(lm) {
-  if (!isFingerExtended(lm, 8,  6))  return false;
-  if (!isFingerExtended(lm, 12, 10)) return false;
-  if (isFingerExtended(lm,  16, 14)) return false;
-  if (isFingerExtended(lm,  20, 18)) return false;
-  if (!isFingerCurled(lm, 16))       return false;
-  if (!isFingerCurled(lm, 20))       return false;
-  if (dist(lm[8], lm[12]) / handSize(lm) < 0.35) return false;
-  return true;
+function setProgressBar(pct) {
+  if (!progressBar) {
+    progressBar = document.createElement('div');
+    progressBar.style.cssText =
+      'position:fixed;bottom:0;left:0;height:4px;background:#111;z-index:998;pointer-events:none;width:0;transition:width 0.05s linear;';
+    document.body.appendChild(progressBar);
+  }
+  progressBar.style.width = (pct * 100) + '%';
 }
 
-// El orden importa: victory antes de open_palm para no confundirlos.
-function classifyGesture(lm) {
-  if (isThumbUp(lm))  return 'thumb_up';
-  if (isVictory(lm))  return 'victory';
-  if (isOpenPalm(lm)) return 'open_palm';
-  if (isPoint(lm))    return 'point';
-  return 'other';
+// Proyecta la dirección del índice (lm[5]→lm[8]) un 40% más allá de la punta
+// para encontrar hacia dónde apunta realmente el dedo.
+function getHoveredCard(lm) {
+  const dx    = lm[8].x - lm[5].x;
+  const dy    = lm[8].y - lm[5].y;
+  const projX = lm[8].x + dx * 0.4;
+  const projY = lm[8].y + dy * 0.4;
+
+  const screenX    = (1 - projX) * window.innerWidth;
+  const screenY    = projY * window.innerHeight;
+  const tipScreenX = (1 - lm[8].x) * window.innerWidth;
+  const tipScreenY = lm[8].y * window.innerHeight;
+
+  const ptr = getOrCreatePointer();
+  ptr.style.display = 'block';
+  ptr.style.left    = tipScreenX + 'px';
+  ptr.style.top     = tipScreenY + 'px';
+
+  let found = null;
+  document.querySelectorAll('.menu-card').forEach(card => {
+    const r  = card.getBoundingClientRect();
+    const ok = screenX >= r.left  - 40 && screenX <= r.right + 40
+            && screenY >= r.top   - 40 && screenY <= r.bottom + 40;
+    card.classList.toggle('hovered', ok);
+    if (ok) found = card.dataset.id;
+  });
+  return found;
 }
 
-// Votación mayoritaria sobre los últimos N frames para suavizar ruido.
-const GESTURE_HISTORY = [];
-const HISTORY_SIZE    = 6;
+function hidePointer() {
+  if (pointerEl) pointerEl.style.display = 'none';
+  document.querySelectorAll('.menu-card').forEach(c => c.classList.remove('hovered'));
+}
 
-function smoothedGesture(raw) {
-  GESTURE_HISTORY.push(raw);
-  if (GESTURE_HISTORY.length > HISTORY_SIZE) GESTURE_HISTORY.shift();
-  const counts = {};
-  for (const g of GESTURE_HISTORY) counts[g] = (counts[g] || 0) + 1;
-  return Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
+function animateHoldRing(id, progress) {
+  const ring = document.getElementById('ring-' + id);
+  if (!ring) return;
+  ring.style.display    = 'block';
+  ring.style.background = 'conic-gradient(#111 ' + (progress * 360) + 'deg, transparent 0deg)';
+}
+
+function animateCardSelect(id) {
+  const card = document.querySelector('.menu-card[data-id="' + id + '"]');
+  if (card) {
+    card.classList.add('selected-flash');
+    setTimeout(() => card.classList.remove('selected-flash'), 600);
+  }
+  const ring = document.getElementById('ring-' + id);
+  if (ring) ring.style.display = 'none';
 }
 
 
-// Inicialización de MediaPipe
+// MediaPipe
+
 let hands;
 const videoEl   = document.getElementById('webcam');
 const canvasEl  = document.getElementById('gesture-canvas');
@@ -394,11 +384,10 @@ async function initMediaPipe() {
   hands.setOptions({
     maxNumHands:            1,
     modelComplexity:        1,
-    minDetectionConfidence: 0.72,
-    minTrackingConfidence:  0.55,
+    minDetectionConfidence: 0.65,
+    minTrackingConfidence:  0.5,
   });
   hands.onResults(onHandResults);
-
   const camera = new Camera(videoEl, {
     onFrame: async () => { await hands.send({ image: videoEl }); },
     width: 320, height: 240,
@@ -414,16 +403,18 @@ function onHandResults(results) {
 
   if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
     gestureLabel.textContent = '—';
-    GESTURE_HISTORY.length = 0;
-    confirmGesture = null;
-    confirmCount   = 0;
-    resetTilt();
-    resetHoldStart = null;
+    activeGesture = null;
+    holdStart     = null;
+    navGesture    = null;
+    navStart      = null;
+    navFired      = false;
     hidePointer();
+    setProgressBar(0);
     return;
   }
 
-  const lm = results.multiHandLandmarks[0];
+  const lm      = results.multiHandLandmarks[0];
+  const gesture = classifyGesture(lm);
 
   drawConnectors(canvasCtx, lm, HAND_CONNECTIONS, { color: '#bbb', lineWidth: 1.5 });
   drawLandmarks(canvasCtx, lm, { color: '#444', lineWidth: 1, radius: 2 });
@@ -433,42 +424,35 @@ function onHandResults(results) {
     socket.emit('gesture:presence');
   }
 
-  const rawGesture = classifyGesture(lm);
-  const gesture    = smoothedGesture(rawGesture);
+  gestureLabel.textContent = gesture === 'other' ? '—' : gesture;
 
-  if (gesture !== 'victory') gestureLabel.textContent = gesture;
-
-  handleTilt(lm, gesture);
-  handleResetGesture(gesture);
+  // Navegación por dedos: corre siempre en paralelo
+  handleNav(gesture);
 
   if (gestureCooldown) {
     if (gesture !== 'point') hidePointer();
+    setProgressBar(0);
     return;
   }
 
-  // Señalar + mantener: tiene su propio sistema de hold por tiempo.
-  // Reseteamos el contador de confirmación mientras dura el gesto.
+  // SEÑALAR + mantener: selecciona el producto apuntado
   if (gesture === 'point') {
-    confirmGesture = 'point';
-    confirmCount   = CONFIRM_FRAMES; // el point no necesita el contador
-
-    if (gestureHoldStart === null) {
-      gestureHoldStart = Date.now();
+    if (activeGesture !== 'point') {
+      activeGesture = 'point';
+      holdStart     = Date.now();
       clearAllHoldRings();
     }
-
-    const elapsed   = Date.now() - gestureHoldStart;
-    const progress  = Math.min(elapsed / HOLD_MS, 1);
+    const elapsed   = Date.now() - holdStart;
+    const progress  = Math.min(elapsed / POINT_HOLD_MS, 1);
     const hoveredId = getHoveredCard(lm);
-
+    setProgressBar(0);
     if (hoveredId) {
       animateHoldRing(hoveredId, progress);
-      if (elapsed >= HOLD_MS) {
+      if (elapsed >= POINT_HOLD_MS) {
         selectItem(hoveredId);
         animateCardSelect(hoveredId);
         hidePointer();
         triggerCooldown();
-        gestureHoldStart = null;
       }
     } else {
       clearAllHoldRings();
@@ -476,169 +460,71 @@ function onHandResults(results) {
     return;
   }
 
-  // Si salimos del point, limpiamos su estado.
-  if (gestureHoldStart !== null) {
-    gestureHoldStart = null;
+  if (activeGesture === 'point') {
     clearAllHoldRings();
     hidePointer();
   }
 
-  // Pulgar arriba: confirmar. Requiere CONFIRM_FRAMES frames estables.
-  if (gesture === 'thumb_up' && gestureConfirmed('thumb_up')) {
-    sendConfirm();
-    showToast('Confirmado 👍');
-    triggerCooldown();
+  // PULGAR ARRIBA: confirmar (barra de progreso global)
+  if (gesture === 'thumb_up') {
+    const prog = updateHold('thumb_up', GESTURE_HOLD_MS);
+    setProgressBar(prog);
+    if (prog >= 1) {
+      sendConfirm();
+      showToast('Confirmado 👍');
+      triggerCooldown();
+    }
     return;
   }
 
-  // Palma abierta: cancelar el último paso. Requiere CONFIRM_FRAMES frames estables.
-  if (gesture === 'open_palm' && gestureConfirmed('open_palm')) {
-    sendCancel();
-    showToast('Cancelado');
-    triggerCooldown();
+  // PALMA ABIERTA: cancelar último paso
+  if (gesture === 'open_palm') {
+    const prog = updateHold('open_palm', GESTURE_HOLD_MS);
+    setProgressBar(prog);
+    if (prog >= 1) {
+      sendCancel();
+      showToast('Cancelado');
+      triggerCooldown();
+    }
     return;
   }
 
-  // Para otros gestos seguimos acumulando el contador.
-  if (gesture !== 'thumb_up' && gesture !== 'open_palm') {
-    gestureConfirmed(gesture);
+  // Ningún gesto activo: limpiamos estado
+  if (gesture !== 'victory' && gesture !== 'three') {
+    activeGesture = null;
+    holdStart     = null;
+    setProgressBar(0);
   }
-}
-
-function triggerCooldown() {
-  gestureCooldown = true;
-  confirmGesture  = null;
-  confirmCount    = 0;
-  setTimeout(() => { gestureCooldown = false; }, COOLDOWN_MS);
-}
-
-function clearAllHoldRings() {
-  document.querySelectorAll('.hold-ring').forEach(r => r.style.display = 'none');
+  hidePointer();
 }
 
 
-// Cursor de puntero gestual (sigue la punta del índice)
-
-let pointerEl = null;
-
-function getOrCreatePointer() {
-  if (!pointerEl) {
-    pointerEl = document.createElement('div');
-    pointerEl.id = 'gesture-pointer';
-    pointerEl.style.cssText =
-      'position:fixed;width:22px;height:22px;border-radius:50%;' +
-      'background:rgba(0,0,0,0.10);border:2px solid #111;' +
-      'pointer-events:none;z-index:999;transform:translate(-50%,-50%);display:none;';
-    document.body.appendChild(pointerEl);
-  }
-  return pointerEl;
-}
-
-// getHoveredCard: usa la dirección del índice (lm[5]→lm[8]) proyectada un 40% más
-// allá de la punta para detectar hacia dónde apunta realmente el dedo.
-// El cursor visual se muestra en la punta real para que el usuario vea su posición.
-const HIT_MARGIN = 40;
-
-function getHoveredCard(lm) {
-  const dx = lm[8].x - lm[5].x;
-  const dy = lm[8].y - lm[5].y;
-
-  const PROJ = 0.40;
-  const projX = lm[8].x + dx * PROJ;
-  const projY = lm[8].y + dy * PROJ;
-
-  const screenX    = (1 - projX) * window.innerWidth;
-  const screenY    = projY * window.innerHeight;
-  const tipScreenX = (1 - lm[8].x) * window.innerWidth;
-  const tipScreenY = lm[8].y * window.innerHeight;
-
-  const ptr = getOrCreatePointer();
-  ptr.style.display = 'block';
-  ptr.style.left = tipScreenX + 'px';
-  ptr.style.top  = tipScreenY + 'px';
-
-  let found = null;
-  document.querySelectorAll('.menu-card').forEach(card => {
-    const rect = card.getBoundingClientRect();
-    const hovered = screenX >= rect.left  - HIT_MARGIN
-                 && screenX <= rect.right + HIT_MARGIN
-                 && screenY >= rect.top   - HIT_MARGIN
-                 && screenY <= rect.bottom + HIT_MARGIN;
-    card.classList.toggle('hovered', hovered);
-    if (hovered) found = card.dataset.id;
-  });
-  return found;
-}
-
-function hidePointer() {
-  if (pointerEl) pointerEl.style.display = 'none';
-  document.querySelectorAll('.menu-card').forEach(c => c.classList.remove('hovered'));
-}
-
-function animateHoldRing(id, progress) {
-  const ring = document.getElementById('ring-' + id);
-  if (!ring) return;
-  ring.style.display = 'block';
-  ring.style.background =
-    'conic-gradient(#111 ' + (progress * 360) + 'deg, transparent 0deg)';
-}
-
-function animateCardSelect(id) {
-  const card = document.querySelector('.menu-card[data-id="' + id + '"]');
-  if (card) {
-    card.classList.add('selected-flash');
-    setTimeout(() => card.classList.remove('selected-flash'), 600);
-  }
-  const ring = document.getElementById('ring-' + id);
-  if (ring) ring.style.display = 'none';
-}
-
-
-// Reconocimiento de voz (Web Speech API).
-// El navegador transcribe el audio y lo enviamos al servidor, que centraliza
-// toda la lógica. Modo continuo con reinicio en onend para sobrevivir timeouts.
+// Voz
 let recognition;
 let voiceActive = false;
 
 function initVoice() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) {
-    document.getElementById('voice-btn').style.opacity = '0.35';
-    document.getElementById('voice-btn').title = 'Tu navegador no soporta reconocimiento de voz';
-    return;
-  }
-
+  if (!SR) { document.getElementById('voice-btn').style.opacity = '0.35'; return; }
   recognition = new SR();
   recognition.lang            = 'es-ES';
   recognition.continuous      = true;
   recognition.interimResults  = false;
   recognition.maxAlternatives = 1;
-
-  recognition.onresult = (event) => {
-    const result = event.results[event.results.length - 1];
-    if (result.isFinal) {
-      socket.emit('voice:command', { transcript: result[0].transcript.trim() });
-    }
+  recognition.onresult = (e) => {
+    const r = e.results[e.results.length - 1];
+    if (r.isFinal) socket.emit('voice:command', { transcript: r[0].transcript.trim() });
   };
-
   recognition.onerror = (e) => {
-    if (e.error !== 'no-speech' && e.error !== 'aborted') {
-      console.warn('[voz error]', e.error);
-    }
+    if (e.error !== 'no-speech' && e.error !== 'aborted') console.warn('[voz]', e.error);
   };
-
   recognition.onend = () => {
-    if (voiceActive) {
-      try { recognition.start(); } catch (_) {}
-    }
+    if (voiceActive) try { recognition.start(); } catch (_) {}
   };
 }
 
 document.getElementById('voice-btn').addEventListener('click', () => {
-  if (!recognition) {
-    showToast('Reconocimiento de voz no disponible en este navegador');
-    return;
-  }
+  if (!recognition) { showToast('Voz no disponible en este navegador'); return; }
   voiceActive = !voiceActive;
   if (voiceActive) {
     try { recognition.start(); } catch (_) {}
@@ -652,26 +538,16 @@ document.getElementById('voice-btn').addEventListener('click', () => {
   }
 });
 
-
-// Toggle de la previsualización de la cámara
 function toggleCamera() {
   cameraHidden = !cameraHidden;
   document.getElementById('camera-container').classList.toggle('cam-hidden', cameraHidden);
 }
 
-
-// Arranque
 async function init() {
   const res = await fetch('/api/menu');
   menuData  = await res.json();
-
-  try {
-    await initMediaPipe();
-  } catch (e) {
-    console.warn('MediaPipe no disponible:', e);
-    statusText.textContent = 'Cámara no disponible';
-  }
-
+  try { await initMediaPipe(); }
+  catch (e) { console.warn('MediaPipe no disponible:', e); statusText.textContent = 'Cámara no disponible'; }
   initVoice();
 }
 
