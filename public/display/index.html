@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Display — TouchKiosk</title>
+  <link rel="stylesheet" href="/css/shared.css" />
+</head>
+<body>
+
+<div id="display-root">
+
+  <header class="d-header">
+    <div class="d-brand">TouchKiosk</div>
+    <div class="d-clock" id="clock">--:--:--</div>
+  </header>
+
+  <main class="d-main">
+
+    <!-- Left: live order summary -->
+    <div class="d-order">
+      <div class="d-order-label">Resumen del pedido</div>
+
+      <div class="d-status idle" id="d-status">
+        <span class="d-status-icon" id="d-status-icon">⏳</span>
+        <span id="d-status-text">Esperando cliente</span>
+      </div>
+
+      <div class="d-items" id="d-items">
+        <div class="d-empty">Sin artículos todavía</div>
+      </div>
+
+      <div class="d-total">
+        <span>Total</span>
+        <span class="d-total-amount" id="d-total">0.00 €</span>
+      </div>
+    </div>
+
+    <!-- Right: gesture reference guide -->
+    <div class="d-guide">
+      <div class="d-guide-label">Gestos</div>
+
+      <div class="d-gesture-card" id="g-presence">
+        <span class="d-g-icon">🚶</span>
+        <div>
+          <div class="d-g-name">Acercarse</div>
+          <div class="d-g-desc">Inicia la sesión automáticamente</div>
+        </div>
+      </div>
+
+      <div class="d-gesture-card" id="g-point">
+        <span class="d-g-icon">☝️</span>
+        <div>
+          <div class="d-g-name">Señalar + mantener</div>
+          <div class="d-g-desc">Selecciona un producto del menú</div>
+        </div>
+      </div>
+
+      <div class="d-gesture-card" id="g-tilt">
+        <span class="d-g-icon">↔️</span>
+        <div>
+          <div class="d-g-name">Inclinar muñeca</div>
+          <div class="d-g-desc">Cambia de categoría izq / der</div>
+        </div>
+      </div>
+
+      <div class="d-gesture-card" id="g-thumb">
+        <span class="d-g-icon">👍</span>
+        <div>
+          <div class="d-g-name">Pulgar arriba</div>
+          <div class="d-g-desc">Confirma selección o pago</div>
+        </div>
+      </div>
+
+      <div class="d-gesture-card" id="g-palm">
+        <span class="d-g-icon">✋</span>
+        <div>
+          <div class="d-g-name">Palma abierta</div>
+          <div class="d-g-desc">Cancela / vuelve atrás</div>
+        </div>
+      </div>
+
+      <div class="d-gesture-card" id="g-voice">
+        <span class="d-g-icon">🎙️</span>
+        <div>
+          <div class="d-g-name">Voz</div>
+          <div class="d-g-desc">"burger", "confirmar", "siguiente"</div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <footer class="d-footer">
+    <span>Sistemas Interactivos y Ubicuos · P2 · Grupo 9</span>
+    <span id="d-category">Categoría: —</span>
+  </footer>
+
+</div>
+
+<!-- Order confirmed overlay -->
+<div id="d-done-overlay">
+  <div class="d-done-emoji">✅</div>
+  <div class="d-done-num" id="d-done-number">--</div>
+  <h1>Pedido confirmado</h1>
+  <p>Recoge en el mostrador cuando escuches tu número</p>
+</div>
+
+<!-- Voice command indicator -->
+<div id="d-voice-indicator">
+  🎙️ <span id="d-voice-text">—</span>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const socket = io({ query: { type: 'display' } });
+
+// Clock
+setInterval(() => {
+  document.getElementById('clock').textContent =
+    new Date().toLocaleTimeString('es-ES');
+}, 1000);
+
+const STATUS_MAP = {
+  idle:       { text: 'Esperando cliente', icon: '⏳', cls: 'idle' },
+  browsing:   { text: 'Explorando el menú', icon: '👀', cls: 'browsing' },
+  ordering:   { text: 'Añadiendo artículos', icon: '🛒', cls: 'ordering' },
+  confirming: { text: 'Confirmando pago', icon: '👍', cls: 'confirming' },
+  done:       { text: 'Pedido listo', icon: '✅', cls: 'done' },
+};
+
+socket.on('state:sync', (state) => {
+  setStatus(state.status);
+  renderItems(state.items || [], state.total || 0);
+  document.getElementById('d-category').textContent =
+    `Categoría: ${state.currentCategory || '—'}`;
+});
+
+socket.on('ui:order-done', ({ orderNumber }) => {
+  document.getElementById('d-done-number').textContent = `#${orderNumber}`;
+  document.getElementById('d-done-overlay').classList.add('show');
+  setStatus('done');
+  setTimeout(() => {
+    document.getElementById('d-done-overlay').classList.remove('show');
+  }, 5000);
+});
+
+socket.on('ui:voice-feedback', ({ transcript }) => {
+  const el = document.getElementById('d-voice-indicator');
+  document.getElementById('d-voice-text').textContent = transcript;
+  el.classList.add('show');
+  flashGesture('g-voice');
+  setTimeout(() => el.classList.remove('show'), 3000);
+});
+
+socket.on('ui:item-added', ()  => flashGesture('g-point'));
+socket.on('ui:welcome',    ()  => flashGesture('g-presence'));
+socket.on('gesture:confirm',() => flashGesture('g-thumb'));
+
+function setStatus(status) {
+  const s = STATUS_MAP[status] || STATUS_MAP.idle;
+  const el = document.getElementById('d-status');
+  el.className = `d-status ${s.cls}`;
+  document.getElementById('d-status-icon').textContent = s.icon;
+  document.getElementById('d-status-text').textContent = s.text;
+}
+
+function renderItems(items, total) {
+  const list = document.getElementById('d-items');
+  const totalEl = document.getElementById('d-total');
+
+  if (!items.length) {
+    list.innerHTML = '<div class="d-empty">Sin artículos todavía</div>';
+    totalEl.textContent = '0.00 €';
+    return;
+  }
+
+  list.innerHTML = '';
+  items.forEach(item => {
+    const row = document.createElement('div');
+    row.className = 'd-item-row';
+    row.innerHTML = `
+      <span class="d-item-emoji">${item.emoji}</span>
+      <span class="d-item-name">${item.name}</span>
+      <span class="d-item-qty">x${item.qty}</span>
+      <span class="d-item-price">${(item.price * item.qty).toFixed(2)} €</span>
+    `;
+    list.appendChild(row);
+  });
+
+  totalEl.textContent = `${total.toFixed(2)} €`;
+}
+
+function flashGesture(id) {
+  const card = document.getElementById(id);
+  if (!card) return;
+  card.classList.add('active');
+  setTimeout(() => card.classList.remove('active'), 900);
+}
+</script>
+</body>
+</html>

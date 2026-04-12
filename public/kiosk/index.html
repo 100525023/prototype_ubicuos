@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TouchKiosk</title>
+  <link rel="stylesheet" href="/css/shared.css" />
+</head>
+<body>
+
+<!-- Idle / welcome screen -->
+<div id="overlay-idle" class="overlay active">
+  <div class="overlay-content">
+    <div class="idle-icon">👋</div>
+    <h1>Bienvenido</h1>
+    <p>Acércate al quiosco para comenzar</p>
+    <div class="pulse-ring"></div>
+  </div>
+</div>
+
+<!-- Order confirmed screen -->
+<div id="overlay-done" class="overlay">
+  <div class="overlay-content">
+    <div class="done-icon">✅</div>
+    <h1>Pedido confirmado</h1>
+    <div class="order-number-label">Tu número de pedido</div>
+    <div class="order-number" id="done-number">--</div>
+    <p>Recoge en el mostrador</p>
+  </div>
+</div>
+
+<!-- Main app (hidden until presence detected) -->
+<div id="app" class="hidden">
+
+  <header class="topbar">
+    <div class="logo">TouchKiosk</div>
+    <div class="gesture-status">
+      <span class="status-dot"></span>
+      <span id="status-text">Iniciando cámara...</span>
+    </div>
+    <div class="voice-btn" id="voice-btn">
+      🎙️ <span id="voice-label">Voz</span>
+    </div>
+  </header>
+
+  <nav class="category-nav">
+    <button class="cat-btn active" data-cat="burgers">Burgers</button>
+    <button class="cat-btn"        data-cat="drinks">Drinks</button>
+    <button class="cat-btn"        data-cat="sides">Sides</button>
+    <button class="cat-btn"        data-cat="desserts">Desserts</button>
+  </nav>
+
+  <main class="content">
+
+    <section class="menu-section">
+      <div class="menu-grid" id="menu-grid"></div>
+      <div class="nav-arrows">
+        <button class="arrow-btn" onclick="sendNavigate('left')">◀</button>
+        <button class="arrow-btn" onclick="sendNavigate('right')">▶</button>
+      </div>
+    </section>
+
+    <aside class="order-panel">
+      <div class="order-panel-header">Tu pedido</div>
+      <div class="order-items" id="order-items">
+        <p class="empty-msg">Sin artículos todavía</p>
+      </div>
+      <div class="order-divider"></div>
+      <div class="order-total">
+        <span>Total</span>
+        <span class="order-total-amount" id="order-total-price">0.00 €</span>
+      </div>
+      <div class="order-actions">
+        <button class="btn-cancel"  onclick="sendCancel()">Cancelar</button>
+        <button class="btn-confirm" onclick="sendConfirm()">Confirmar</button>
+      </div>
+    </aside>
+
+  </main>
+
+  <!-- Confirmation modal (double-confirm before paying) -->
+  <div id="confirm-modal" class="modal hidden">
+    <div class="modal-box">
+      <h2>¿Confirmar pedido?</h2>
+      <div class="modal-total" id="modal-total-price"></div>
+      <p>Pulgar arriba otra vez para pagar · Palma para cancelar</p>
+      <div class="modal-btns">
+        <button class="btn-cancel"  onclick="sendCancel()">Volver</button>
+        <button class="btn-confirm" onclick="sendConfirm()">Pagar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast"     class="toast hidden"></div>
+  <div id="voice-bar" class="voice-bar hidden">
+    🎙️ <span id="voice-transcript">Escuchando...</span>
+  </div>
+
+  <!-- Camera preview with gesture skeleton overlay -->
+  <div class="camera-container" id="camera-container">
+    <video id="webcam" autoplay muted playsinline></video>
+    <canvas id="gesture-canvas"></canvas>
+    <div class="gesture-label" id="gesture-label">—</div>
+    <button class="cam-toggle" onclick="toggleCamera()">📷</button>
+  </div>
+
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"  crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"                crossorigin="anonymous"></script>
+<script src="/js/kiosk.js"></script>
+</body>
+</html>

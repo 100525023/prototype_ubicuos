@@ -1,0 +1,1004 @@
+/*
+  shared.css — Touchless Kiosk P2
+  Used by both /kiosk and /display.
+  Monochrome, minimal, no decorative color.
+*/
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --white:      #ffffff;
+  --off:        #f7f7f7;
+  --light:      #e6e6e6;
+  --mid:        #999999;
+  --dark:       #444444;
+  --black:      #111111;
+  --radius-sm:  6px;
+  --radius:     10px;
+  --radius-lg:  14px;
+  --font:       'Segoe UI', system-ui, -apple-system, sans-serif;
+
+  /* Animation durations — change one place, affects everything */
+  --dur-fast:   0.12s;
+  --dur-base:   0.22s;
+  --dur-slow:   0.4s;
+  --ease:       cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+html, body {
+  height: 100%;
+  font-family: var(--font);
+  background: var(--white);
+  color: var(--black);
+  overflow: hidden;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+.hidden {
+  display: none !important;
+}
+
+::-webkit-scrollbar       { width: 3px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--light); border-radius: 2px; }
+
+
+/* Shared keyframes
+   Named clearly so it's obvious what each does */
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-in-left {
+  from { opacity: 0; transform: translateX(-12px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* The idle screen hand floats gently */
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-10px); }
+}
+
+/* Expanding ring on the idle screen */
+@keyframes pulse-ring {
+  0%   { transform: scale(0.85); opacity: 0.6; }
+  100% { transform: scale(2.2);  opacity: 0; }
+}
+
+/* Status dot on the kiosk topbar */
+@keyframes status-blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.2; }
+}
+
+/* Item row entering the order list on the display */
+@keyframes item-enter {
+  from { opacity: 0; transform: translateX(-10px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* Gesture card pulse when a gesture fires on the display */
+@keyframes gesture-flash {
+  0%   { background: var(--black); }
+  100% { background: var(--off); }
+}
+
+
+/* ══════════════════════════════════════
+   KIOSK PAGE STYLES
+══════════════════════════════════════ */
+
+/* Overlay screens (idle welcome + order-done) */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--white);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-slow) var(--ease);
+}
+
+.overlay.active {
+  opacity: 1;
+  pointer-events: all;
+}
+
+.overlay-content {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.overlay-content h1 {
+  font-size: 2.6rem;
+  font-weight: 300;
+  letter-spacing: -0.03em;
+  color: var(--black);
+}
+
+.overlay-content p {
+  font-size: 1rem;
+  color: var(--mid);
+}
+
+.idle-icon {
+  font-size: 3.6rem;
+  margin-bottom: 0.4rem;
+  animation: float 3.5s ease-in-out infinite;
+}
+
+.done-icon {
+  font-size: 3.6rem;
+  margin-bottom: 0.4rem;
+  animation: fade-in var(--dur-base) var(--ease);
+}
+
+.order-number-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--mid);
+  margin-top: 0.5rem;
+}
+
+.order-number {
+  font-size: 6rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  color: var(--black);
+  animation: slide-up var(--dur-base) var(--ease);
+}
+
+.pulse-ring {
+  width: 72px;
+  height: 72px;
+  border: 1px solid var(--mid);
+  border-radius: 50%;
+  margin-top: 1.8rem;
+  animation: pulse-ring 2.8s ease-out infinite;
+}
+
+
+/* App shell */
+
+#app {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+
+/* Top bar */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.8rem 1.4rem;
+  border-bottom: 1px solid var(--light);
+  background: var(--white);
+  flex-shrink: 0;
+}
+
+.logo {
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--black);
+}
+
+.gesture-status {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  color: var(--mid);
+}
+
+.status-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--black);
+  animation: status-blink 2.5s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+.voice-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  color: var(--dark);
+  padding: 0.38rem 0.85rem;
+  border: 1px solid var(--light);
+  border-radius: 20px;
+  cursor: pointer;
+  background: var(--white);
+  font-family: var(--font);
+  transition: border-color var(--dur-fast), background var(--dur-fast), color var(--dur-fast);
+}
+
+.voice-btn:hover {
+  border-color: var(--dark);
+  color: var(--black);
+}
+
+.voice-btn.listening {
+  background: var(--black);
+  border-color: var(--black);
+  color: var(--white);
+}
+
+
+/* Category tabs */
+
+.category-nav {
+  display: flex;
+  border-bottom: 1px solid var(--light);
+  background: var(--white);
+  flex-shrink: 0;
+  padding: 0 1.4rem;
+}
+
+.cat-btn {
+  padding: 0.7rem 1.3rem;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--mid);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: var(--font);
+  margin-bottom: -1px;
+  transition: color var(--dur-fast), border-color var(--dur-fast);
+}
+
+.cat-btn:hover { color: var(--dark); }
+
+.cat-btn.active {
+  color: var(--black);
+  border-bottom-color: var(--black);
+}
+
+
+/* Content layout */
+
+.content {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+
+/* Menu section */
+
+.menu-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 1.1rem 1.4rem;
+  overflow: hidden;
+}
+
+.menu-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.75rem;
+  overflow-y: auto;
+}
+
+.menu-card {
+  background: var(--white);
+  border: 1px solid var(--light);
+  border-radius: var(--radius);
+  padding: 1.3rem 1rem;
+  text-align: center;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition: border-color var(--dur-fast), background var(--dur-fast), transform var(--dur-fast);
+}
+
+/* Hover via mouse */
+.menu-card:hover {
+  border-color: var(--dark);
+  background: var(--off);
+}
+
+/* Hover via gesture pointer */
+.menu-card.hovered {
+  border-color: var(--dark);
+  background: var(--off);
+  transform: scale(1.015);
+}
+
+/* Flash on successful selection */
+.menu-card.selected-flash {
+  border-color: var(--black);
+  background: var(--black);
+  transform: scale(1);
+  transition: none;
+}
+
+.menu-card.selected-flash .item-name,
+.menu-card.selected-flash .item-price,
+.menu-card.selected-flash .item-emoji {
+  filter: invert(1);
+}
+
+.item-emoji {
+  font-size: 2.2rem;
+  margin-bottom: 0.45rem;
+  display: block;
+  transition: transform var(--dur-base) var(--ease);
+}
+
+.menu-card.hovered .item-emoji {
+  transform: scale(1.08);
+}
+
+.item-name {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--black);
+  margin-bottom: 0.2rem;
+}
+
+.item-price {
+  font-size: 0.82rem;
+  color: var(--mid);
+}
+
+/* Hold progress ring — conic fill rendered by JS */
+.hold-ring {
+  display: none;
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius);
+  opacity: 0.14;
+  pointer-events: none;
+}
+
+.nav-arrows {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.arrow-btn {
+  flex: 1;
+  padding: 0.5rem;
+  background: var(--off);
+  border: 1px solid var(--light);
+  border-radius: var(--radius);
+  color: var(--dark);
+  font-size: 0.95rem;
+  cursor: pointer;
+  font-family: var(--font);
+  transition: background var(--dur-fast), color var(--dur-fast), border-color var(--dur-fast);
+}
+
+.arrow-btn:hover {
+  background: var(--black);
+  border-color: var(--black);
+  color: var(--white);
+}
+
+
+/* Order panel */
+
+.order-panel {
+  width: 252px;
+  border-left: 1px solid var(--light);
+  display: flex;
+  flex-direction: column;
+  background: var(--off);
+  flex-shrink: 0;
+}
+
+.order-panel-header {
+  padding: 1rem 1.2rem 0.5rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--mid);
+}
+
+.order-items {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.38rem;
+}
+
+.empty-msg {
+  color: var(--mid);
+  font-size: 0.82rem;
+  padding: 0.8rem 0;
+}
+
+.order-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  background: var(--white);
+  border: 1px solid var(--light);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.7rem;
+  font-size: 0.82rem;
+  animation: slide-up var(--dur-base) var(--ease);
+}
+
+.row-emoji  { font-size: 0.95rem; }
+.row-name   { flex: 1; font-weight: 500; color: var(--black); }
+.row-qty    { color: var(--mid); font-size: 0.78rem; }
+.row-price  { font-weight: 600; min-width: 42px; text-align: right; font-size: 0.82rem; }
+
+.row-remove {
+  background: none;
+  border: none;
+  color: var(--mid);
+  cursor: pointer;
+  font-size: 0.72rem;
+  padding: 0.1rem 0.28rem;
+  border-radius: 3px;
+  line-height: 1;
+  transition: background var(--dur-fast), color var(--dur-fast);
+}
+
+.row-remove:hover {
+  background: var(--black);
+  color: var(--white);
+}
+
+.order-divider {
+  height: 1px;
+  background: var(--light);
+  margin: 0.7rem 1.2rem;
+}
+
+.order-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 0 1.2rem 0.8rem;
+  font-size: 0.85rem;
+  color: var(--dark);
+}
+
+.order-total-amount {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--black);
+  letter-spacing: -0.02em;
+  transition: transform var(--dur-fast) var(--ease);
+}
+
+/* Tiny bump animation when the total changes */
+.order-total-amount.bump {
+  animation: total-bump var(--dur-base) var(--ease);
+}
+
+@keyframes total-bump {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.07); }
+  100% { transform: scale(1); }
+}
+
+.order-actions {
+  display: flex;
+  gap: 0.45rem;
+  padding: 0.7rem 1.2rem 1.1rem;
+}
+
+.btn-cancel,
+.btn-confirm {
+  flex: 1;
+  padding: 0.65rem;
+  border-radius: var(--radius);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: var(--font);
+  transition: background var(--dur-fast), color var(--dur-fast), border-color var(--dur-fast), transform var(--dur-fast);
+}
+
+.btn-cancel {
+  background: var(--white);
+  color: var(--dark);
+  border: 1px solid var(--light);
+}
+
+.btn-cancel:hover {
+  border-color: var(--dark);
+  color: var(--black);
+}
+
+.btn-confirm {
+  background: var(--black);
+  color: var(--white);
+  border: 1px solid var(--black);
+}
+
+.btn-confirm:hover {
+  background: var(--dark);
+  border-color: var(--dark);
+}
+
+.btn-cancel:active,
+.btn-confirm:active {
+  transform: scale(0.97);
+}
+
+
+/* Confirmation modal */
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(6px);
+  animation: fade-in var(--dur-base) var(--ease);
+}
+
+.modal-box {
+  background: var(--white);
+  border: 1px solid var(--light);
+  border-radius: var(--radius-lg);
+  padding: 2.2rem 1.8rem;
+  text-align: center;
+  max-width: 320px;
+  width: 90%;
+  animation: slide-up var(--dur-base) var(--ease);
+}
+
+.modal-box h2 {
+  font-size: 1.2rem;
+  font-weight: 500;
+  color: var(--black);
+  margin-bottom: 0.4rem;
+}
+
+.modal-total {
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--black);
+  margin: 0.6rem 0;
+}
+
+.modal-box p {
+  color: var(--mid);
+  font-size: 0.84rem;
+  margin-bottom: 1.3rem;
+}
+
+.modal-btns {
+  display: flex;
+  gap: 0.5rem;
+}
+
+
+/* Toast notification */
+
+.toast {
+  position: fixed;
+  bottom: 6.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--black);
+  color: var(--white);
+  border-radius: 20px;
+  padding: 0.5rem 1.1rem;
+  font-size: 0.82rem;
+  font-weight: 500;
+  z-index: 200;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: slide-up var(--dur-fast) var(--ease);
+}
+
+
+/* Voice feedback bar */
+
+.voice-bar {
+  position: fixed;
+  bottom: 3.8rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--black);
+  color: var(--white);
+  border-radius: 20px;
+  padding: 0.45rem 1.1rem;
+  font-size: 0.82rem;
+  display: flex;
+  gap: 0.45rem;
+  align-items: center;
+  z-index: 200;
+  pointer-events: none;
+  animation: slide-up var(--dur-fast) var(--ease);
+}
+
+
+/* Camera preview (bottom-right corner) */
+
+.camera-container {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  width: 190px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--black);
+  border: 1px solid var(--light);
+  z-index: 30;
+  transition: width var(--dur-slow) var(--ease),
+              height var(--dur-slow) var(--ease),
+              border-radius var(--dur-slow) var(--ease);
+}
+
+.camera-container.cam-hidden {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+}
+
+.camera-container video {
+  width: 100%;
+  display: block;
+  transform: scaleX(-1);
+}
+
+.camera-container canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: scaleX(-1);
+}
+
+.gesture-label {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 0.65rem;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  padding: 2px 0;
+  letter-spacing: 0.04em;
+}
+
+.cam-toggle {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: rgba(0, 0, 0, 0.4);
+  border: none;
+  border-radius: 4px;
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.7rem;
+  padding: 2px 5px;
+  line-height: 1.4;
+  transition: background var(--dur-fast);
+}
+
+.cam-toggle:hover {
+  background: rgba(0, 0, 0, 0.7);
+}
+
+
+/* ══════════════════════════════════════
+   DISPLAY PAGE STYLES
+══════════════════════════════════════ */
+
+#display-root {
+  height: 100vh;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+}
+
+.d-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 2rem;
+  border-bottom: 1px solid var(--light);
+  background: var(--white);
+}
+
+.d-brand {
+  font-size: 1.1rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--black);
+}
+
+.d-clock {
+  font-size: 1rem;
+  color: var(--mid);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.d-main {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 1.2rem;
+  padding: 1.2rem 2rem;
+  overflow: hidden;
+}
+
+/* Left panel: order summary */
+
+.d-order {
+  background: var(--off);
+  border: 1px solid var(--light);
+  border-radius: var(--radius-lg);
+  padding: 1.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  overflow: hidden;
+}
+
+.d-order-label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--mid);
+}
+
+/* Status pill */
+
+.d-status {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.9rem 1.2rem;
+  border-radius: var(--radius);
+  background: var(--white);
+  border: 1px solid var(--light);
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--black);
+  border-left: 3px solid var(--light);
+  transition: border-color var(--dur-slow) var(--ease), color var(--dur-slow) var(--ease);
+}
+
+.d-status.idle       { border-left-color: var(--light); color: var(--mid); }
+.d-status.browsing   { border-left-color: var(--dark);  color: var(--dark); }
+.d-status.ordering   { border-left-color: var(--black); color: var(--black); }
+.d-status.confirming { border-left-color: var(--black); color: var(--black); }
+.d-status.done       { border-left-color: var(--black); color: var(--black); }
+
+.d-status-icon {
+  font-size: 1.3rem;
+  flex-shrink: 0;
+}
+
+/* Item list */
+
+.d-items {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.d-item-row {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.75rem 1rem;
+  background: var(--white);
+  border: 1px solid var(--light);
+  border-radius: var(--radius);
+  font-size: 0.95rem;
+  animation: item-enter var(--dur-base) var(--ease);
+}
+
+.d-item-emoji { font-size: 1.4rem; }
+.d-item-name  { flex: 1; font-weight: 500; color: var(--black); }
+.d-item-qty   { color: var(--mid); font-size: 0.85rem; }
+.d-item-price { font-weight: 700; color: var(--black); min-width: 60px; text-align: right; }
+
+.d-empty {
+  text-align: center;
+  color: var(--mid);
+  padding: 2.5rem;
+  font-size: 0.9rem;
+}
+
+/* Total row */
+
+.d-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--light);
+  font-size: 0.9rem;
+  color: var(--dark);
+}
+
+.d-total-amount {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: var(--black);
+  letter-spacing: -0.03em;
+}
+
+/* Right panel: gesture guide */
+
+.d-guide {
+  background: var(--off);
+  border: 1px solid var(--light);
+  border-radius: var(--radius-lg);
+  padding: 1.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  overflow-y: auto;
+}
+
+.d-guide-label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--mid);
+  margin-bottom: 0.3rem;
+}
+
+.d-gesture-card {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  background: var(--white);
+  border: 1px solid var(--light);
+  border-radius: var(--radius);
+  padding: 0.75rem 0.9rem;
+  transition: background var(--dur-base) var(--ease),
+              border-color var(--dur-base) var(--ease),
+              transform var(--dur-fast) var(--ease);
+}
+
+/* When a gesture fires, the card briefly inverts */
+.d-gesture-card.active {
+  background: var(--black);
+  border-color: var(--black);
+}
+
+.d-gesture-card.active .d-g-name,
+.d-gesture-card.active .d-g-desc {
+  color: var(--white);
+}
+
+.d-g-icon { font-size: 1.6rem; min-width: 38px; text-align: center; }
+.d-g-name { font-weight: 600; font-size: 0.88rem; color: var(--black); }
+.d-g-desc { font-size: 0.76rem; color: var(--mid); margin-top: 1px; }
+
+/* Footer */
+
+.d-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.65rem 2rem;
+  border-top: 1px solid var(--light);
+  background: var(--white);
+  font-size: 0.78rem;
+  color: var(--mid);
+}
+
+/* Order-done overlay on the display */
+
+#d-done-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: var(--white);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 0.8rem;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-slow) var(--ease);
+}
+
+#d-done-overlay.show {
+  opacity: 1;
+  pointer-events: all;
+}
+
+#d-done-overlay .d-done-emoji {
+  font-size: 3.5rem;
+  animation: fade-in var(--dur-base) var(--ease);
+}
+
+#d-done-overlay .d-done-num {
+  font-size: 7rem;
+  font-weight: 700;
+  letter-spacing: -0.05em;
+  color: var(--black);
+  line-height: 1;
+  animation: slide-up var(--dur-base) var(--ease);
+}
+
+#d-done-overlay h1 {
+  font-size: 2rem;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+}
+
+#d-done-overlay p {
+  color: var(--mid);
+  font-size: 1rem;
+}
+
+/* Voice indicator pill (top-right of display) */
+
+#d-voice-indicator {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 40;
+  background: var(--black);
+  color: var(--white);
+  border-radius: 20px;
+  padding: 0.4rem 0.9rem;
+  font-size: 0.82rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-base) var(--ease);
+  animation: none;
+}
+
+#d-voice-indicator.show {
+  opacity: 1;
+  animation: slide-up var(--dur-fast) var(--ease);
+}
