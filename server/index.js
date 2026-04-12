@@ -7,6 +7,7 @@ const app    = express();
 const server = http.createServer(app);
 const io     = new Server(server, { cors: { origin: '*' } });
 
+// Servimos los ficheros estáticos desde /public
 app.use(express.static(path.join(__dirname, '../public')));
 app.get('/',        (_, res) => res.sendFile(path.join(__dirname, '../public/kiosk/index.html')));
 app.get('/kiosk',   (_, res) => res.sendFile(path.join(__dirname, '../public/kiosk/index.html')));
@@ -14,7 +15,10 @@ app.get('/display', (_, res) => res.sendFile(path.join(__dirname, '../public/dis
 app.get('/api/menu', (_, res) => res.json(getMenu()));
 
 
-// Shared order state — single source of truth for all connected clients
+// Estado compartido del pedido
+//
+// Es la única fuente de verdad para todos los clientes conectados.
+// Cualquier cambio se propaga inmediatamente mediante broadcast().
 
 let orderState = freshState();
 
@@ -26,20 +30,22 @@ function recalcTotal() {
   orderState.total = orderState.items.reduce((s, i) => s + i.price * i.qty, 0);
 }
 
+// Envía el estado completo a todos los clientes conectados
 function broadcast() {
   io.emit('state:sync', orderState);
 }
 
 
-// Socket event handlers
+// Manejadores de eventos de Socket.IO
 
 io.on('connection', (socket) => {
-  const clientType = socket.handshake.query.type || 'unknown';
-  console.log(`[+] ${clientType} connected: ${socket.id}`);
+  const clientType = socket.handshake.query.type || 'desconocido';
+  console.log(`[+] ${clientType} conectado: ${socket.id}`);
 
-  // Send full state immediately on connect so new screens are in sync
+  // Al conectar enviamos el estado actual para que la pantalla se sincronice
   socket.emit('state:sync', orderState);
 
+  // Detección de presencia: activa la sesión desde la pantalla de inicio
   socket.on('gesture:presence', () => {
     if (orderState.status === 'idle') {
       orderState.status = 'browsing';
@@ -48,6 +54,7 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Navegación entre categorías (izquierda / derecha)
   socket.on('gesture:navigate', ({ direction }) => {
     const cats = ['burgers', 'drinks', 'sides', 'desserts'];
     const i    = cats.indexOf(orderState.currentCategory);
@@ -57,17 +64,23 @@ io.on('connection', (socket) => {
     broadcast();
   });
 
+  // Selección de un producto del menú
   socket.on('gesture:select', ({ itemId }) => {
     const item = getMenu().find(m => m.id === itemId);
     if (!item) return;
     const existing = orderState.items.find(i => i.id === itemId);
-    if (existing) { existing.qty += 1; } else { orderState.items.push({ ...item, qty: 1 }); }
+    if (existing) {
+      existing.qty += 1;
+    } else {
+      orderState.items.push({ ...item, qty: 1 });
+    }
     recalcTotal();
     orderState.status = 'ordering';
     broadcast();
     io.emit('ui:item-added', item);
   });
 
+  // Confirmar: primer pulgar → pide confirmación; segundo pulgar → finaliza
   socket.on('gesture:confirm', () => {
     if (orderState.status === 'ordering') {
       orderState.status = 'confirming';
@@ -78,19 +91,24 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Cancelar: deshace el último paso sin borrar todo el pedido
   socket.on('gesture:cancel', () => {
     if (orderState.status === 'confirming') {
+      // Volvemos a la pantalla de pedido
       orderState.status = 'ordering';
     } else if (orderState.status === 'ordering' && orderState.items.length > 0) {
+      // Eliminamos el último artículo añadido
       orderState.items.pop();
       recalcTotal();
       if (orderState.items.length === 0) orderState.status = 'browsing';
     } else {
+      // Nada que deshacer: reiniciamos (solo desde browsing o idle)
       orderState = freshState();
     }
     broadcast();
   });
 
+  // Eliminar un artículo concreto (botón × del panel de pedido)
   socket.on('order:remove-item', ({ itemId }) => {
     orderState.items = orderState.items.filter(i => i.id !== itemId);
     recalcTotal();
@@ -98,44 +116,47 @@ io.on('connection', (socket) => {
     broadcast();
   });
 
+  // Comando de voz: el cliente envía la transcripción, el servidor la procesa
   socket.on('voice:command', ({ transcript }) => {
     const text = transcript.toLowerCase().trim();
-    console.log('[voice]', text);
+    console.log('[voz]', text);
     io.emit('ui:voice-feedback', { transcript });
     handleVoice(text);
   });
 
+  // Reset completo de sesión (disparado por el gesto V mantenido)
   socket.on('session:reset', () => {
     orderState = freshState();
     broadcast();
   });
 
   socket.on('disconnect', () => {
-    console.log(`[-] ${clientType} disconnected: ${socket.id}`);
+    console.log(`[-] ${clientType} desconectado: ${socket.id}`);
   });
 });
 
 
-// Order finalisation
+// Finalización del pedido
 
 function finaliseOrder() {
   const orderNumber = Math.floor(Math.random() * 90) + 10;
   io.emit('ui:order-done', { orderNumber, total: orderState.total });
   orderState = freshState();
+  // Esperamos a que la pantalla de confirmación termine de mostrarse
   setTimeout(broadcast, 4000);
 }
 
 
-// Voice command handler
+// Procesamiento de comandos de voz
 //
-// All mutations happen directly on orderState here — no socket re-emitting,
-// which on the server side just echoes back to that one client and does nothing.
-// Regex matching covers Spanish and English phrasing for every command.
+// Toda la lógica de comandos vive aquí, en el servidor.
+// Las mutaciones se aplican directamente sobre orderState y se difunden
+// con broadcast(); no hace falta re-emitir al cliente origen.
 
 function handleVoice(text) {
   const cats = ['burgers', 'drinks', 'sides', 'desserts'];
 
-  // "siguiente" / "anterior" — step through categories
+  // "siguiente" / "anterior" — avanza o retrocede en las categorías
   if (/siguiente|next|adelante|avanzar/.test(text)) {
     const i = cats.indexOf(orderState.currentCategory);
     orderState.currentCategory = cats[(i + 1) % cats.length];
@@ -150,7 +171,7 @@ function handleVoice(text) {
     return;
   }
 
-  // Confirm / pay
+  // Confirmar / pagar
   if (/confirmar|confirm|pagar|pay/.test(text)) {
     if (orderState.status === 'ordering') {
       orderState.status = 'confirming';
@@ -162,7 +183,7 @@ function handleVoice(text) {
     return;
   }
 
-  // Cancel
+  // Cancelar / borrar
   if (/cancelar|cancel|borrar|eliminar/.test(text)) {
     if (orderState.status === 'confirming') {
       orderState.status = 'ordering';
@@ -177,7 +198,7 @@ function handleVoice(text) {
     return;
   }
 
-  // Jump to a category by name (Spanish + English)
+  // Saltar a una categoría por nombre (español e inglés)
   const catKeywords = {
     burgers:  /burger|hamburguesa|hamburgesa/,
     drinks:   /drink|bebida|refresco|beber|agua|cola|zumo|batido/,
@@ -186,9 +207,8 @@ function handleVoice(text) {
   };
   for (const [cat, rx] of Object.entries(catKeywords)) {
     if (rx.test(text)) {
-      // Only switch category if it's not also an item command — check items first below
-      // by breaking out of this block and falling through to item matching.
-      // Exception: if text is purely a category word with no item detail, switch now.
+      // Si el texto también coincide con un artículo concreto,
+      // dejamos que la siguiente sección lo maneje en su lugar.
       const isItemCommand = itemAliases().some(({ rx: irx }) => irx.test(text));
       if (!isItemCommand) {
         orderState.currentCategory = cat;
@@ -200,14 +220,18 @@ function handleVoice(text) {
     }
   }
 
-  // Add an item by spoken name
+  // Añadir un artículo por nombre
   const menu = getMenu();
   for (const { id, rx } of itemAliases()) {
     if (rx.test(text)) {
       const item = menu.find(m => m.id === id);
       if (!item) continue;
       const existing = orderState.items.find(i => i.id === id);
-      if (existing) { existing.qty += 1; } else { orderState.items.push({ ...item, qty: 1 }); }
+      if (existing) {
+        existing.qty += 1;
+      } else {
+        orderState.items.push({ ...item, qty: 1 });
+      }
       recalcTotal();
       orderState.status = 'ordering';
       broadcast();
@@ -216,9 +240,10 @@ function handleVoice(text) {
     }
   }
 
-  // Nothing matched — the transcript feedback already shown to the user is enough
+  // Si no coincide nada, el feedback visual de transcripción ya es suficiente
 }
 
+// Aliases de voz para cada artículo del menú
 function itemAliases() {
   return [
     { id: 'b1', rx: /big burger|big/i },
@@ -240,7 +265,7 @@ function itemAliases() {
 }
 
 
-// Menu data
+// Datos del menú
 
 function getMenu() {
   return [
@@ -264,7 +289,7 @@ function getMenu() {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`\n🚀 TouchKiosk on http://localhost:${PORT}`);
-  console.log(`   Kiosk:   http://localhost:${PORT}/kiosk`);
-  console.log(`   Display: http://localhost:${PORT}/display\n`);
+  console.log(`\nTouchKiosk en http://localhost:${PORT}`);
+  console.log(`  Kiosk:   http://localhost:${PORT}/kiosk`);
+  console.log(`  Display: http://localhost:${PORT}/display\n`);
 });

@@ -1,34 +1,116 @@
-// kiosk.js -- Touchless Kiosk P2
-// MediaPipe gesture recognition + Web Speech API voice + Socket.IO
+// kiosk.js — Touchless Kiosk P2
+// Reconocimiento de gestos con MediaPipe + voz con Web Speech API + Socket.IO
 
 const socket = io({ query: { type: 'kiosk' } });
 
-// App state
 let menuData       = [];
 let orderState     = {};
 let cameraHidden   = false;
 
-// Gesture tracking
-let lastGesture      = null;
+// Temporización de gestos
+const HOLD_MS       = 800;   // ms para seleccionar con el dedo
+const COOLDOWN_MS   = 1200;  // pausa entre gestos para evitar disparos dobles
+const RESET_HOLD_MS = 2000;  // ms para el gesto de reset (V)
+
+// Sistema de confirmación por frames.
+// Un gesto solo se dispara si se mantiene estable durante CONFIRM_FRAMES frames
+// consecutivos. Evita activaciones accidentales al pasar entre posturas.
+const CONFIRM_FRAMES = 16;
+let confirmGesture = null;
+let confirmCount   = 0;
+
+// Devuelve true la primera vez que el gesto lleva CONFIRM_FRAMES frames seguidos.
+function gestureConfirmed(gesture) {
+  if (gesture !== confirmGesture) {
+    confirmGesture = gesture;
+    confirmCount   = 1;
+    return false;
+  }
+  confirmCount++;
+  return confirmCount === CONFIRM_FRAMES;
+}
+
 let gestureHoldStart = null;
 let gestureCooldown  = false;
 let presenceDetected = false;
 
-// Fist-swipe navigation state.
-// The user swipes their closed fist horizontally in the air.
-// We measure frame-to-frame velocity and total travel.
-// A swipe fires once both thresholds are crossed, then cooldown prevents double-fire.
-let swipeOriginX  = null;   // wrist X when movement began
-let swipePrevX    = null;   // wrist X previous frame
-let swipeArmed    = false;  // true once speed threshold crossed at least once
-let swipeFired    = false;  // true once the swipe has been sent (prevents repeat)
+// Navegación por inclinación de muñeca.
+// Mide el ángulo del eje muñeca(lm[0])→palma(lm[9]) respecto a la vertical.
+// Si se mantiene inclinado más de TILT_ANGLE_DEG durante TILT_HOLD_MS, navega.
+const TILT_ANGLE_DEG = 28;
+const TILT_HOLD_MS   = 420;
 
-const HOLD_MS         = 800;
-const COOLDOWN_MS     = 1200;
-const SWIPE_MIN_DIST  = 0.16;   // minimum total normalised X travel to count as a swipe
-const SWIPE_MIN_SPEED = 0.010;  // minimum per-frame speed to arm the swipe
+let tiltDirection  = null;
+let tiltStartTime  = null;
+let tiltFired      = false;
 
-// DOM references
+function handleTilt(lm, gesture) {
+  if (gesture === 'point' || gesture === 'thumb_up') {
+    resetTilt();
+    return;
+  }
+
+  const dx = lm[9].x - lm[0].x;
+  const dy = lm[9].y - lm[0].y;
+  const angleDeg = Math.atan2(dx, -dy) * (180 / Math.PI);
+
+  // La cámara está espejada: inclinarse a la derecha da ángulo negativo.
+  let currentTilt = null;
+  if (angleDeg > TILT_ANGLE_DEG)  currentTilt = 'left';
+  if (angleDeg < -TILT_ANGLE_DEG) currentTilt = 'right';
+
+  if (currentTilt === null) { resetTilt(); return; }
+
+  if (currentTilt !== tiltDirection) {
+    tiltDirection = currentTilt;
+    tiltStartTime = Date.now();
+    tiltFired     = false;
+    return;
+  }
+
+  if (!tiltFired && !gestureCooldown && (Date.now() - tiltStartTime) >= TILT_HOLD_MS) {
+    socket.emit('gesture:navigate', { direction: tiltDirection });
+    showToast(tiltDirection === 'right' ? 'Siguiente categoría ▶' : '◀ Categoría anterior');
+    tiltFired = true;
+    triggerCooldown();
+    setTimeout(resetTilt, COOLDOWN_MS);
+  }
+}
+
+function resetTilt() {
+  tiltDirection = null;
+  tiltStartTime = null;
+  tiltFired     = false;
+}
+
+// Gesto de reset total: V mantenida RESET_HOLD_MS ms.
+// Difícil de hacer accidentalmente; muestra progreso en el label de cámara.
+let resetHoldStart = null;
+
+function handleResetGesture(gesture) {
+  if (gesture !== 'victory') {
+    resetHoldStart = null;
+    return;
+  }
+
+  if (resetHoldStart === null) {
+    resetHoldStart = Date.now();
+    return;
+  }
+
+  const elapsed  = Date.now() - resetHoldStart;
+  const progress = Math.min(elapsed / RESET_HOLD_MS, 1);
+  gestureLabel.textContent = `reset ${Math.round(progress * 100)}%`;
+
+  if (elapsed >= RESET_HOLD_MS) {
+    socket.emit('session:reset');
+    showToast('Pedido eliminado');
+    resetHoldStart = null;
+    triggerCooldown();
+  }
+}
+
+// Referencias al DOM
 const overlayIdle     = document.getElementById('overlay-idle');
 const overlayDone     = document.getElementById('overlay-done');
 const appEl           = document.getElementById('app');
@@ -45,7 +127,7 @@ const voiceTranscript = document.getElementById('voice-transcript');
 const categoryBtns    = document.querySelectorAll('.cat-btn');
 
 
-// Socket events
+// Eventos de Socket.IO
 
 socket.on('state:sync', (state) => {
   orderState = state;
@@ -58,16 +140,16 @@ socket.on('state:sync', (state) => {
 socket.on('ui:welcome', () => {
   overlayIdle.classList.remove('active');
   appEl.classList.remove('hidden');
-  showToast('Bienvenido -- senala un producto para anadirlo');
+  showToast('Bienvenido — señala un producto para añadirlo');
 });
 
 socket.on('ui:item-added', (item) => {
-  showToast(item.emoji + ' ' + item.name + ' anadido');
+  showToast(item.emoji + ' ' + item.name + ' añadido');
 });
 
 socket.on('ui:confirm-prompt', () => {
   confirmModal.classList.remove('hidden');
-  modalTotal.textContent = 'Total: ' + orderState.total.toFixed(2) + ' EUR';
+  modalTotal.textContent = 'Total: ' + orderState.total.toFixed(2) + ' €';
 });
 
 socket.on('ui:order-done', ({ orderNumber }) => {
@@ -91,7 +173,7 @@ socket.on('ui:voice-feedback', ({ transcript }) => {
 socket.on('trigger:cancel', () => sendCancel());
 
 
-// Rendering
+// Renderizado de menú y pedido
 
 function renderMenu() {
   const cat   = orderState.currentCategory || 'burgers';
@@ -104,7 +186,7 @@ function renderMenu() {
     card.innerHTML =
       '<div class="item-emoji">' + item.emoji + '</div>' +
       '<div class="item-name">'  + item.name  + '</div>' +
-      '<div class="item-price">' + item.price.toFixed(2) + ' EUR</div>' +
+      '<div class="item-price">' + item.price.toFixed(2) + ' €</div>' +
       '<div class="hold-ring" id="ring-' + item.id + '"></div>';
     card.addEventListener('click', () => selectItem(item.id));
     menuGrid.appendChild(card);
@@ -113,8 +195,8 @@ function renderMenu() {
 
 function renderOrder() {
   if (!orderState.items || orderState.items.length === 0) {
-    orderItemsEl.innerHTML = '<p class="empty-msg">Sin articulos todavia</p>';
-    totalPriceEl.textContent = '0.00 EUR';
+    orderItemsEl.innerHTML = '<p class="empty-msg">Sin artículos todavía</p>';
+    totalPriceEl.textContent = '0.00 €';
     return;
   }
   orderItemsEl.innerHTML = '';
@@ -125,15 +207,16 @@ function renderOrder() {
       '<span class="row-emoji">'  + item.emoji + '</span>' +
       '<span class="row-name">'   + item.name  + '</span>' +
       '<span class="row-qty">x'   + item.qty   + '</span>' +
-      '<span class="row-price">'  + (item.price * item.qty).toFixed(2) + ' EUR</span>' +
-      '<button class="row-remove" onclick="removeItem(\'' + item.id + '\')">x</button>';
+      '<span class="row-price">'  + (item.price * item.qty).toFixed(2) + ' €</span>' +
+      '<button class="row-remove" onclick="removeItem(\'' + item.id + '\')">×</button>';
     orderItemsEl.appendChild(row);
   });
-  const newTotal = orderState.total.toFixed(2) + ' EUR';
+
+  const newTotal = orderState.total.toFixed(2) + ' €';
   if (totalPriceEl.textContent !== newTotal) {
     totalPriceEl.textContent = newTotal;
     totalPriceEl.classList.remove('bump');
-    void totalPriceEl.offsetWidth;
+    void totalPriceEl.offsetWidth; // fuerza reflow para reiniciar la animación
     totalPriceEl.classList.add('bump');
   }
 }
@@ -147,15 +230,14 @@ function syncCategoryUI(cat) {
 function handleStatusChange(status) {
   if (status === 'confirming') {
     confirmModal.classList.remove('hidden');
-    modalTotal.textContent = 'Total: ' + orderState.total.toFixed(2) + ' EUR';
+    modalTotal.textContent = 'Total: ' + orderState.total.toFixed(2) + ' €';
   } else {
     confirmModal.classList.add('hidden');
   }
 }
 
 
-// Server actions
-
+// Acciones enviadas al servidor
 function selectItem(id)    { socket.emit('gesture:select',   { itemId: id }); }
 function sendNavigate(dir) { socket.emit('gesture:navigate', { direction: dir }); }
 function sendConfirm()     { socket.emit('gesture:confirm'); }
@@ -163,7 +245,7 @@ function sendCancel()      { socket.emit('gesture:cancel'); }
 function removeItem(id)    { socket.emit('order:remove-item', { itemId: id }); }
 
 
-// Toast
+// Toast de notificación
 
 let toastTimer;
 function showToast(msg) {
@@ -174,25 +256,24 @@ function showToast(msg) {
 }
 
 
-// Geometry helpers
+// Utilidades geométricas para landmarks
 
 function dist(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y, (a.z || 0) - (b.z || 0));
 }
 
+// Distancia muñeca–palma: normaliza el resto de medidas al tamaño de la mano.
 function handSize(lm) {
   return dist(lm[0], lm[9]) || 0.001;
 }
 
-// A finger is extended when its tip is clearly farther from the wrist than its PIP.
-// Threshold 0.13 -- conservative, fewer false positives.
+// True si la punta del dedo está claramente más lejos de la muñeca que su PIP.
 function isFingerExtended(lm, tipIdx, pipIdx) {
   const sz = handSize(lm);
   return (dist(lm[tipIdx], lm[0]) - dist(lm[pipIdx], lm[0])) / sz > 0.13;
 }
 
-// Positive curl check: tip is close to the palm center.
-// Used in thumb_up to ensure fingers are genuinely closed, not just short of extended.
+// True si la punta del dedo está cerca del centro de la palma.
 function isFingerCurled(lm, tipIdx) {
   return dist(lm[tipIdx], lm[9]) / handSize(lm) < 0.85;
 }
@@ -204,143 +285,103 @@ function isThumbExtended(lm) {
   return farEnough && spreadOut;
 }
 
-// Thumb up -- seven independent checks.
-// Each one eliminates a specific false-positive scenario (loose fist, side thumb, etc.)
+// Pulgar arriba: pulgar extendido + los cuatro dedos cerrados + punta por encima de la muñeca.
 function isThumbUp(lm) {
   if (!isThumbExtended(lm)) return false;
 
-  // All four fingers must be actively curled close to the palm
   if (!isFingerCurled(lm, 8))  return false;
   if (!isFingerCurled(lm, 12)) return false;
   if (!isFingerCurled(lm, 16)) return false;
   if (!isFingerCurled(lm, 20)) return false;
 
-  // Belt-and-suspenders: also fail the extension test
   if (isFingerExtended(lm, 8,  6))  return false;
   if (isFingerExtended(lm, 12, 10)) return false;
   if (isFingerExtended(lm, 16, 14)) return false;
   if (isFingerExtended(lm, 20, 18)) return false;
 
-  // Thumb tip must be well above the wrist
   if (lm[4].y > lm[0].y - 0.10) return false;
-  // Thumb tip above its own MCP (rules out sideways thumbs)
   if (lm[4].y > lm[2].y - 0.06) return false;
-  // Thumb tip above the index MCP (confirms upward direction)
   if (lm[4].y > lm[5].y) return false;
 
   return true;
 }
 
-// Open palm: all four fingers clearly extended and far from a curl
+// Palma abierta: los cuatro dedos extendidos y el corazón genuinamente largo.
 function isOpenPalm(lm) {
   if (!isFingerExtended(lm, 8,  6))  return false;
   if (!isFingerExtended(lm, 12, 10)) return false;
   if (!isFingerExtended(lm, 16, 14)) return false;
   if (!isFingerExtended(lm, 20, 18)) return false;
-  // Middle finger must be genuinely far out (not a half-open hand)
   if (dist(lm[12], lm[0]) / handSize(lm) < 1.4) return false;
   return true;
 }
 
-// Point: index extended, middle and ring positively curled, all others in
+// Señalar: mide la linealidad del índice (lm[5]→8) en lugar de distancia a la muñeca,
+// así funciona también cuando la mano apunta horizontalmente hacia la cámara.
 function isPoint(lm) {
-  if (!isFingerExtended(lm, 8,  6))  return false;
-  if (isFingerExtended(lm,  12, 10)) return false;
-  if (isFingerExtended(lm,  16, 14)) return false;
-  if (isFingerExtended(lm,  20, 18)) return false;
-  if (!isFingerCurled(lm, 12))       return false;
-  if (!isFingerCurled(lm, 16))       return false;
-  return true;
-}
-
-// Fist: all four fingers curled and not extended
-function isFist(lm) {
-  if (isFingerExtended(lm, 8,  6))  return false;
   if (isFingerExtended(lm, 12, 10)) return false;
   if (isFingerExtended(lm, 16, 14)) return false;
   if (isFingerExtended(lm, 20, 18)) return false;
+  if (!isFingerCurled(lm, 12))      return false;
+  if (!isFingerCurled(lm, 16))      return false;
+
+  const A  = lm[5];
+  const B  = lm[8];
+  const ab = Math.hypot(B.x - A.x, B.y - A.y, (B.z || 0) - (A.z || 0));
+  if (ab < 0.001) return false;
+
+  // Distancia perpendicular del punto P a la recta A→B.
+  function pointToLineDist(P) {
+    const t = ((P.x-A.x)*(B.x-A.x) + (P.y-A.y)*(B.y-A.y) + ((P.z||0)-(A.z||0))*((B.z||0)-(A.z||0))) / (ab * ab);
+    const dx = A.x + t*(B.x-A.x) - P.x;
+    const dy = A.y + t*(B.y-A.y) - P.y;
+    const dz = (A.z||0) + t*((B.z||0)-(A.z||0)) - (P.z||0);
+    return Math.hypot(dx, dy, dz);
+  }
+
+  const sz = handSize(lm);
+  if (pointToLineDist(lm[6]) / sz > 0.22) return false;
+  if (pointToLineDist(lm[7]) / sz > 0.22) return false;
+  if (ab / sz < 0.40) return false; // descarta dedos muy escorzados
+
   return true;
 }
 
+// Victory/V: índice y corazón extendidos y separados, anular y meñique recogidos.
+function isVictory(lm) {
+  if (!isFingerExtended(lm, 8,  6))  return false;
+  if (!isFingerExtended(lm, 12, 10)) return false;
+  if (isFingerExtended(lm,  16, 14)) return false;
+  if (isFingerExtended(lm,  20, 18)) return false;
+  if (!isFingerCurled(lm, 16))       return false;
+  if (!isFingerCurled(lm, 20))       return false;
+  if (dist(lm[8], lm[12]) / handSize(lm) < 0.35) return false;
+  return true;
+}
+
+// El orden importa: victory antes de open_palm para no confundirlos.
 function classifyGesture(lm) {
   if (isThumbUp(lm))  return 'thumb_up';
+  if (isVictory(lm))  return 'victory';
   if (isOpenPalm(lm)) return 'open_palm';
   if (isPoint(lm))    return 'point';
-  if (isFist(lm))     return 'fist';
   return 'other';
 }
 
-// Majority vote over recent frames -- smooths out single-frame noise.
-// 8 frames gives good stability without too much latency.
+// Votación mayoritaria sobre los últimos N frames para suavizar ruido.
 const GESTURE_HISTORY = [];
+const HISTORY_SIZE    = 6;
 
 function smoothedGesture(raw) {
   GESTURE_HISTORY.push(raw);
-  if (GESTURE_HISTORY.length > 8) GESTURE_HISTORY.shift();
+  if (GESTURE_HISTORY.length > HISTORY_SIZE) GESTURE_HISTORY.shift();
   const counts = {};
   for (const g of GESTURE_HISTORY) counts[g] = (counts[g] || 0) + 1;
   return Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
 }
 
 
-// Fist-swipe navigation
-//
-// The user closes their fist and sweeps it left or right in front of the camera.
-// We track the wrist landmark (lm[0]) X position across frames.
-// Two conditions must both be met before we fire:
-//   1. Per-frame speed crossed SWIPE_MIN_SPEED at least once (intentional movement)
-//   2. Total travel from origin crossed SWIPE_MIN_DIST (enough distance)
-// The camera feed is mirrored, so positive X delta = user moving left = "left" in UI.
-
-function handleSwipe(lm, gesture) {
-  // Swipe only works with a closed fist -- clear state for any other gesture
-  if (gesture !== 'fist') {
-    swipeOriginX = null;
-    swipePrevX   = null;
-    swipeArmed   = false;
-    swipeFired   = false;
-    return;
-  }
-
-  const wx = lm[0].x;  // normalised 0-1, mirrored
-
-  if (swipeOriginX === null) {
-    swipeOriginX = wx;
-    swipePrevX   = wx;
-    swipeArmed   = false;
-    swipeFired   = false;
-    return;
-  }
-
-  const speed = Math.abs(wx - swipePrevX);
-  const total = wx - swipeOriginX;  // negative = user moved right (mirrored)
-
-  // Arm once speed threshold is crossed
-  if (speed > SWIPE_MIN_SPEED) swipeArmed = true;
-
-  // Fire once armed and enough total distance covered
-  if (swipeArmed && !swipeFired && !gestureCooldown && Math.abs(total) > SWIPE_MIN_DIST) {
-    // Mirrored feed: moving right (positive delta in camera) = user moved left
-    const direction = total > 0 ? 'left' : 'right';
-    socket.emit('gesture:navigate', { direction });
-    showToast(direction === 'right' ? 'Siguiente categoria' : 'Categoria anterior');
-    swipeFired = true;
-    triggerCooldown();
-    // Reset after a beat so the user can do another swipe
-    setTimeout(() => {
-      swipeOriginX = null;
-      swipePrevX   = null;
-      swipeArmed   = false;
-      swipeFired   = false;
-    }, COOLDOWN_MS);
-  }
-
-  swipePrevX = wx;
-}
-
-
-// MediaPipe setup
-
+// Inicialización de MediaPipe
 let hands;
 const videoEl   = document.getElementById('webcam');
 const canvasEl  = document.getElementById('gesture-canvas');
@@ -363,7 +404,7 @@ async function initMediaPipe() {
     width: 320, height: 240,
   });
   camera.start();
-  statusText.textContent = 'Camara activa';
+  statusText.textContent = 'Cámara activa';
 }
 
 function onHandResults(results) {
@@ -372,12 +413,12 @@ function onHandResults(results) {
   canvasCtx.clearRect(0, 0, canvasEl.width, canvasEl.height);
 
   if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
-    gestureLabel.textContent = '--';
+    gestureLabel.textContent = '—';
     GESTURE_HISTORY.length = 0;
-    swipeOriginX = null;
-    swipePrevX   = null;
-    swipeArmed   = false;
-    swipeFired   = false;
+    confirmGesture = null;
+    confirmCount   = 0;
+    resetTilt();
+    resetHoldStart = null;
     hidePointer();
     return;
   }
@@ -394,77 +435,81 @@ function onHandResults(results) {
 
   const rawGesture = classifyGesture(lm);
   const gesture    = smoothedGesture(rawGesture);
-  gestureLabel.textContent = gesture;
 
-  // Navigation is handled independently -- runs every frame
-  handleSwipe(lm, gesture);
+  if (gesture !== 'victory') gestureLabel.textContent = gesture;
+
+  handleTilt(lm, gesture);
+  handleResetGesture(gesture);
 
   if (gestureCooldown) {
     if (gesture !== 'point') hidePointer();
     return;
   }
 
-  if (gesture === 'fist' || gesture === 'other') {
-    if (lastGesture === 'point') {
-      gestureHoldStart = null;
-      clearAllHoldRings();
-      hidePointer();
-    }
-    lastGesture = gesture;
-    return;
-  }
-
-  // Point + hold to select
+  // Señalar + mantener: tiene su propio sistema de hold por tiempo.
+  // Reseteamos el contador de confirmación mientras dura el gesto.
   if (gesture === 'point') {
-    if (lastGesture !== 'point') {
+    confirmGesture = 'point';
+    confirmCount   = CONFIRM_FRAMES; // el point no necesita el contador
+
+    if (gestureHoldStart === null) {
       gestureHoldStart = Date.now();
-      lastGesture = 'point';
       clearAllHoldRings();
-    } else {
-      const elapsed   = Date.now() - gestureHoldStart;
-      const progress  = Math.min(elapsed / HOLD_MS, 1);
-      const hoveredId = getHoveredCard(lm[8]);
-      if (hoveredId) {
-        animateHoldRing(hoveredId, progress);
-        if (elapsed >= HOLD_MS) {
-          selectItem(hoveredId);
-          animateCardSelect(hoveredId);
-          hidePointer();
-          triggerCooldown();
-          gestureHoldStart = null;
-          lastGesture      = null;
-        }
-      } else {
-        clearAllHoldRings();
+    }
+
+    const elapsed   = Date.now() - gestureHoldStart;
+    const progress  = Math.min(elapsed / HOLD_MS, 1);
+    const hoveredId = getHoveredCard(lm);
+
+    if (hoveredId) {
+      animateHoldRing(hoveredId, progress);
+      if (elapsed >= HOLD_MS) {
+        selectItem(hoveredId);
+        animateCardSelect(hoveredId);
+        hidePointer();
+        triggerCooldown();
+        gestureHoldStart = null;
       }
+    } else {
+      clearAllHoldRings();
     }
     return;
   }
 
-  // Thumb up confirms
-  if (gesture === 'thumb_up' && lastGesture !== 'thumb_up') {
-    lastGesture = 'thumb_up';
+  // Si salimos del point, limpiamos su estado.
+  if (gestureHoldStart !== null) {
+    gestureHoldStart = null;
+    clearAllHoldRings();
+    hidePointer();
+  }
+
+  // Pulgar arriba: confirmar. Requiere CONFIRM_FRAMES frames estables.
+  if (gesture === 'thumb_up' && gestureConfirmed('thumb_up')) {
     sendConfirm();
-    showToast('Confirmado');
+    showToast('Confirmado 👍');
     triggerCooldown();
     return;
   }
 
-  // Open palm cancels
-  if (gesture === 'open_palm' && lastGesture !== 'open_palm') {
-    lastGesture = 'open_palm';
+  // Palma abierta: cancelar el último paso. Requiere CONFIRM_FRAMES frames estables.
+  if (gesture === 'open_palm' && gestureConfirmed('open_palm')) {
     sendCancel();
     showToast('Cancelado');
     triggerCooldown();
     return;
   }
 
-  lastGesture = gesture;
+  // Para otros gestos seguimos acumulando el contador.
+  if (gesture !== 'thumb_up' && gesture !== 'open_palm') {
+    gestureConfirmed(gesture);
+  }
 }
 
 function triggerCooldown() {
   gestureCooldown = true;
-  setTimeout(() => { gestureCooldown = false; lastGesture = null; }, COOLDOWN_MS);
+  confirmGesture  = null;
+  confirmCount    = 0;
+  setTimeout(() => { gestureCooldown = false; }, COOLDOWN_MS);
 }
 
 function clearAllHoldRings() {
@@ -472,7 +517,7 @@ function clearAllHoldRings() {
 }
 
 
-// Pointer cursor -- follows the index fingertip while pointing
+// Cursor de puntero gestual (sigue la punta del índice)
 
 let pointerEl = null;
 
@@ -489,21 +534,36 @@ function getOrCreatePointer() {
   return pointerEl;
 }
 
-function getHoveredCard(indexTip) {
-  // Flip X because the camera feed is mirrored
-  const screenX = (1 - indexTip.x) * window.innerWidth;
-  const screenY = indexTip.y * window.innerHeight;
+// getHoveredCard: usa la dirección del índice (lm[5]→lm[8]) proyectada un 40% más
+// allá de la punta para detectar hacia dónde apunta realmente el dedo.
+// El cursor visual se muestra en la punta real para que el usuario vea su posición.
+const HIT_MARGIN = 40;
+
+function getHoveredCard(lm) {
+  const dx = lm[8].x - lm[5].x;
+  const dy = lm[8].y - lm[5].y;
+
+  const PROJ = 0.40;
+  const projX = lm[8].x + dx * PROJ;
+  const projY = lm[8].y + dy * PROJ;
+
+  const screenX    = (1 - projX) * window.innerWidth;
+  const screenY    = projY * window.innerHeight;
+  const tipScreenX = (1 - lm[8].x) * window.innerWidth;
+  const tipScreenY = lm[8].y * window.innerHeight;
 
   const ptr = getOrCreatePointer();
   ptr.style.display = 'block';
-  ptr.style.left = screenX + 'px';
-  ptr.style.top  = screenY + 'px';
+  ptr.style.left = tipScreenX + 'px';
+  ptr.style.top  = tipScreenY + 'px';
 
   let found = null;
   document.querySelectorAll('.menu-card').forEach(card => {
-    const rect    = card.getBoundingClientRect();
-    const hovered = screenX >= rect.left && screenX <= rect.right
-                 && screenY >= rect.top  && screenY <= rect.bottom;
+    const rect = card.getBoundingClientRect();
+    const hovered = screenX >= rect.left  - HIT_MARGIN
+                 && screenX <= rect.right + HIT_MARGIN
+                 && screenY >= rect.top   - HIT_MARGIN
+                 && screenY <= rect.bottom + HIT_MARGIN;
     card.classList.toggle('hovered', hovered);
     if (hovered) found = card.dataset.id;
   });
@@ -534,11 +594,9 @@ function animateCardSelect(id) {
 }
 
 
-// Voice recognition via Web Speech API
-// The browser sends audio to the recognition engine which returns transcripts.
-// We emit the transcript to the server where all command logic lives.
-// Using continuous mode keeps the mic open; we restart on end to handle timeouts.
-
+// Reconocimiento de voz (Web Speech API).
+// El navegador transcribe el audio y lo enviamos al servidor, que centraliza
+// toda la lógica. Modo continuo con reinicio en onend para sobrevivir timeouts.
 let recognition;
 let voiceActive = false;
 
@@ -557,22 +615,18 @@ function initVoice() {
   recognition.maxAlternatives = 1;
 
   recognition.onresult = (event) => {
-    // Take the last result (most recent utterance)
     const result = event.results[event.results.length - 1];
     if (result.isFinal) {
-      const transcript = result[0].transcript.trim();
-      socket.emit('voice:command', { transcript });
+      socket.emit('voice:command', { transcript: result[0].transcript.trim() });
     }
   };
 
   recognition.onerror = (e) => {
-    // 'no-speech' and 'aborted' are normal -- don't log them as errors
     if (e.error !== 'no-speech' && e.error !== 'aborted') {
-      console.warn('[voice error]', e.error);
+      console.warn('[voz error]', e.error);
     }
   };
 
-  // Keep recognition alive as long as voice mode is on
   recognition.onend = () => {
     if (voiceActive) {
       try { recognition.start(); } catch (_) {}
@@ -587,14 +641,10 @@ document.getElementById('voice-btn').addEventListener('click', () => {
   }
   voiceActive = !voiceActive;
   if (voiceActive) {
-    try {
-      recognition.start();
-    } catch (_) {
-      // Already running -- that's fine
-    }
+    try { recognition.start(); } catch (_) {}
     document.getElementById('voice-label').textContent = 'Activa';
     document.getElementById('voice-btn').classList.add('listening');
-    showToast('Voz activada. Di "hamburguesa", "agua", "confirmar"...');
+    showToast('Voz activada. Di "hamburguesa", "agua", "confirmar"…');
   } else {
     recognition.stop();
     document.getElementById('voice-label').textContent = 'Voz';
@@ -603,16 +653,14 @@ document.getElementById('voice-btn').addEventListener('click', () => {
 });
 
 
-// Camera preview toggle
-
+// Toggle de la previsualización de la cámara
 function toggleCamera() {
   cameraHidden = !cameraHidden;
   document.getElementById('camera-container').classList.toggle('cam-hidden', cameraHidden);
 }
 
 
-// Boot
-
+// Arranque
 async function init() {
   const res = await fetch('/api/menu');
   menuData  = await res.json();
@@ -620,8 +668,8 @@ async function init() {
   try {
     await initMediaPipe();
   } catch (e) {
-    console.warn('MediaPipe failed:', e);
-    statusText.textContent = 'Camara no disponible';
+    console.warn('MediaPipe no disponible:', e);
+    statusText.textContent = 'Cámara no disponible';
   }
 
   initVoice();

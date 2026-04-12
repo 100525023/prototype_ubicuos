@@ -1,4 +1,4 @@
-# 🍔 Touchless Kiosk — SIU P2
+# Touchless Kiosk — SIU P2
 
 **Sistemas Interactivos y Ubicuos · Grupo 9**  
 Adam Kowalczyk Holtsova · Mohamed Rida Chahdaoui Moujib · David Benito Gil
@@ -7,71 +7,68 @@ Adam Kowalczyk Holtsova · Mohamed Rida Chahdaoui Moujib · David Benito Gil
 
 ## Descripción
 
-Quiosco de comida rápida **sin contacto táctil**, controlado mediante:
-- 👍 **Gestos de mano** (MediaPipe Hands via webcam)
-- 🎙️ **Comandos de voz** (Web Speech API)
-- 📡 **Sincronización en tiempo real** entre dispositivos (Socket.IO)
+Quiosco de comida rápida sin contacto táctil, controlado mediante gestos de mano capturados por webcam (MediaPipe Hands), comandos de voz (Web Speech API) y sincronización en tiempo real entre dispositivos (Socket.IO).
 
 ---
 
 ## Requisitos
 
-- **Node.js** v18 o superior
-- Navegador con soporte WebRTC + Web Speech API (Chrome/Edge recomendado)
-- Webcam (para detección de gestos)
-- Red local compartida para multi-dispositivo
+- Node.js v18 o superior
+- Chrome o Edge (necesitan WebRTC y Web Speech API; Firefox no soporta la API de voz)
+- Webcam para la detección de gestos
+- Red local compartida si se quiere usar la pantalla display en otro dispositivo
 
 ---
 
-## Instalación y ejecución
+## Instalación y arranque
 
 ```bash
-# 1. Clonar / descomprimir el proyecto
 cd touchless-kiosk
-
-# 2. Instalar dependencias
 npm install
-
-# 3. Arrancar el servidor
 npm start
 ```
 
-El servidor arranca en **http://localhost:3000**
+El servidor arranca en http://localhost:3000
 
 ---
 
-## URLs del sistema
+## Pantallas del sistema
 
-| Pantalla | URL | Descripción |
+| Pantalla | URL | Uso |
 |---|---|---|
-| Kiosk (interacción) | `http://localhost:3000/kiosk` | Pantalla de pedido con cámara y gestos |
-| Display (TV/mostrador) | `http://localhost:3000/display` | Pantalla secundaria con resumen del pedido |
+| Kiosk | `http://localhost:3000/kiosk` | Pantalla principal de pedido con cámara y gestos |
+| Display | `http://localhost:3000/display` | Pantalla secundaria para el mostrador |
 
-Para acceder desde otro dispositivo en la misma red, sustituye `localhost` por la IP del servidor (p.ej. `http://192.168.1.X:3000/display`).
+Para acceder al display desde otro dispositivo en la misma red, sustituye `localhost` por la IP del servidor (por ejemplo: `http://192.168.1.X:3000/display`).
 
 ---
 
-## Gestos implementados
+## Gestos
 
 | Gesto | Acción |
 |---|---|
-| 🚶 Presencia (wrist detectado) | Inicia la sesión automáticamente |
-| ☝️ Señalar + mantener ~0.8s | Selecciona el producto sobre el que apuntas |
-| ✌️ Deslizar lateralmente | Cambia de categoría (izq/der) |
-| 👍 Pulgar arriba | Confirma selección / pago |
-| ✋ Palma abierta | Cancela / vuelve atrás |
+| Presencia (muñeca detectada) | Inicia la sesión automáticamente |
+| Señalar con el índice y mantener ~0.8 s | Selecciona el producto sobre el que apuntas |
+| Inclinar la muñeca hacia un lado | Cambia de categoría (izquierda / derecha) |
+| Pulgar arriba | Confirma selección o pago |
+| Palma abierta | Cancela el último paso |
+| V (índice + corazón) mantenida 2 s | Elimina todo el pedido — difícil de activar accidentalmente |
+
+La navegación por inclinación de muñeca funciona midiendo el ángulo del eje muñeca–palma respecto a la vertical. Basta con inclinar la mano unos 28 grados durante medio segundo; no hace falta hacer ningún movimiento brusco.
+
+El gesto de reset total (V mantenida) requiere mantener los dos dedos extendidos y separados durante dos segundos seguidos. El porcentaje de progreso aparece en el indicador de la cámara.
 
 ---
 
 ## Comandos de voz
 
-Activa el micrófono con el botón 🎙️ de la pantalla kiosk y di:
+Activa el micrófono con el botón de la pantalla kiosk y di:
 
-- **Nombre del producto**: `"burger"`, `"cola"`, `"fries"`...
-- **Categoría**: `"burgers"`, `"drinks"`, `"sides"`, `"desserts"`
-- **Navegación**: `"siguiente"` / `"next"`
-- **Confirmar**: `"confirmar"` / `"pagar"` / `"confirm"`
-- **Cancelar**: `"cancelar"` / `"atrás"` / `"cancel"`
+- Nombre del producto: "burger", "cola", "fries"...
+- Categoría: "burgers", "drinks", "sides", "desserts"
+- Navegación: "siguiente" / "next"
+- Confirmar: "confirmar" / "pagar" / "confirm"
+- Cancelar: "cancelar" / "atrás" / "cancel"
 
 ---
 
@@ -79,13 +76,13 @@ Activa el micrófono con el botón 🎙️ de la pantalla kiosk y di:
 
 ```
 [Webcam / Micrófono]
-        │
+        |
 [MediaPipe Hands / Web Speech API]
-        │
+        |
 [Socket.IO Client — Kiosk]
-        │  WebSocket (TCP)
+        |  WebSocket
 [Node.js + Express + Socket.IO — Server :3000]
-        │  WebSocket broadcast
+        |  WebSocket broadcast
 [Socket.IO Client — Display]
 ```
 
@@ -101,11 +98,11 @@ touchless-kiosk/
 │   ├── kiosk/
 │   │   └── index.html    # Pantalla de interacción (gestos + voz)
 │   ├── display/
-│   │   └── index.html    # Pantalla secundaria (TV/mostrador)
+│   │   └── index.html    # Pantalla secundaria (TV / mostrador)
 │   ├── css/
-│   │   └── kiosk.css     # Estilos pantalla kiosk
+│   │   └── shared.css    # Estilos compartidos
 │   └── js/
-│       └── kiosk.js      # Lógica gestos + voz + Socket.IO cliente
+│       └── kiosk.js      # Lógica de gestos + voz + Socket.IO cliente
 ├── package.json
 └── README.md
 ```
