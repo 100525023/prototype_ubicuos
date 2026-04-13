@@ -8,33 +8,35 @@
   <style>
     /* Panel de historial de pedidos */
     .d-history {
-      background: var(--off);
-      border: 1px solid var(--light);
-      border-radius: var(--radius-lg);
+      background: rgba(251, 254, 255, 0.74);
+      border: 1px solid rgba(255, 255, 255, 0.84);
+      border-radius: 20px;
       padding: 1.4rem;
       display: flex;
       flex-direction: column;
       gap: 0.5rem;
       overflow-y: auto;
+      box-shadow: 0 14px 28px rgba(16, 43, 68, 0.1);
     }
     .d-history-label {
       font-size: 0.68rem;
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.1em;
-      color: var(--mid);
+      color: var(--dark);
       margin-bottom: 0.3rem;
     }
     .d-history-row {
-      background: var(--white);
-      border: 1px solid var(--light);
-      border-radius: var(--radius);
+      background: rgba(255, 255, 255, 0.93);
+      border: 1px solid rgba(193, 212, 228, 0.92);
+      border-radius: 12px;
       padding: 0.6rem 0.9rem;
       display: flex;
       align-items: baseline;
       gap: 0.6rem;
       font-size: 0.82rem;
       animation: item-enter var(--dur-base) var(--ease);
+      box-shadow: 0 8px 15px rgba(17, 45, 70, 0.06);
     }
     .d-history-num {
       font-weight: 700;
@@ -66,7 +68,7 @@
     }
     /* Layout: 3 columnas en el main cuando hay historial */
     .d-main {
-      grid-template-columns: 1fr 220px 220px;
+      grid-template-columns: 1fr 230px 230px;
     }
 
     @media (max-width: 1000px) {
@@ -81,7 +83,10 @@
 <div id="display-root">
 
   <header class="d-header">
-    <div class="d-brand">TouchKiosk</div>
+    <div class="d-brand-wrap">
+      <div class="d-brand">TouchKiosk</div>
+      <div class="d-brand-sub">Panel de mostrador en tiempo real</div>
+    </div>
     <div class="d-clock" id="clock">--:--:--</div>
   </header>
 

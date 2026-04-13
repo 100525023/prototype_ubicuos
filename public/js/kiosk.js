@@ -389,15 +389,32 @@ function setProgressBarColor(phase) {
 // hacia dónde apunta el dedo, no solo dónde está la punta.
 // Devuelve objetivo de point: producto o flecha de navegación.
 function getPointTarget(lm) {
+  // Remapeo del espacio de cámara al espacio de pantalla.
+  // Ganancia >1 amplía alcance hacia bordes (especialmente abajo).
+  const MAP_X_GAIN   = 1.10;
+  const MAP_Y_GAIN   = 1.45;
+  const MAP_X_OFFSET = 0.00;
+  const MAP_Y_OFFSET = -0.03;
+
+  function remapNorm(v, gain, offset) {
+    const mapped = ((v - 0.5) * gain) + 0.5 + offset;
+    return Math.max(0, Math.min(1, mapped));
+  }
+
   const dx    = lm[8].x - lm[5].x;
   const dy    = lm[8].y - lm[5].y;
   const projX = lm[8].x + dx * 0.4;
   const projY = lm[8].y + dy * 0.4;
 
-  const screenX    = (1 - projX) * window.innerWidth;
-  const screenY    = projY * window.innerHeight;
-  const tipScreenX = (1 - lm[8].x) * window.innerWidth;
-  const tipScreenY = lm[8].y * window.innerHeight;
+  const projXMapped = remapNorm(projX,   MAP_X_GAIN, MAP_X_OFFSET);
+  const projYMapped = remapNorm(projY,   MAP_Y_GAIN, MAP_Y_OFFSET);
+  const tipXMapped  = remapNorm(lm[8].x, MAP_X_GAIN, MAP_X_OFFSET);
+  const tipYMapped  = remapNorm(lm[8].y, MAP_Y_GAIN, MAP_Y_OFFSET);
+
+  const screenX    = (1 - projXMapped) * window.innerWidth;
+  const screenY    = projYMapped * window.innerHeight;
+  const tipScreenX = (1 - tipXMapped) * window.innerWidth;
+  const tipScreenY = tipYMapped * window.innerHeight;
 
   const ptr = getOrCreatePointer();
   ptr.style.display = 'block';
@@ -426,12 +443,13 @@ function getPointTarget(lm) {
 
   let navFound = null;
   let navBestScore = Infinity;
-  const NAV_HIT_MARGIN = 20;
+  const NAV_HIT_MARGIN_X = 34;
+  const NAV_HIT_MARGIN_Y = 90;
 
   document.querySelectorAll('.arrow-btn[data-nav]').forEach(btn => {
     const r  = btn.getBoundingClientRect();
-    const ok = screenX >= r.left - NAV_HIT_MARGIN && screenX <= r.right  + NAV_HIT_MARGIN
-            && screenY >= r.top  - NAV_HIT_MARGIN && screenY <= r.bottom + NAV_HIT_MARGIN;
+    const ok = screenX >= r.left - NAV_HIT_MARGIN_X && screenX <= r.right  + NAV_HIT_MARGIN_X
+            && screenY >= r.top  - NAV_HIT_MARGIN_Y && screenY <= r.bottom + NAV_HIT_MARGIN_Y;
 
     if (ok) {
       const cx = r.left + r.width / 2;
