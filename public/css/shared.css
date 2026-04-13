@@ -404,7 +404,8 @@ html, body {
   transition: background var(--dur-fast), color var(--dur-fast), border-color var(--dur-fast);
 }
 
-.arrow-btn:hover {
+.arrow-btn:hover,
+.arrow-btn.hovered {
   background: var(--black);
   border-color: var(--black);
   color: var(--white);

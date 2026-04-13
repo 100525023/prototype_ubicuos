@@ -35,6 +35,7 @@ Para el display en otro dispositivo, sustituye `localhost` por la IP del servido
 |---|---|
 | Mostrar la palma a la cámara | Inicia la sesión |
 | Señalar con el índice y mantener | Selecciona el producto apuntado |
+| Señalar la flecha ◀ o ▶ y mantener | Cambia de categoría |
 | ✌️ V con mano derecha y mantener | Siguiente categoría |
 | ✌️ V con mano izquierda y mantener | Categoría anterior |
 | 👍 Pulgar arriba y mantener | Confirma / paga |

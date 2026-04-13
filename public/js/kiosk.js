@@ -11,6 +11,7 @@ let presenceDetected = false;
 // Temporización
 const GESTURE_HOLD_MS = 700;   // thumb_up y open_palm
 const POINT_HOLD_MS   = 1300;  // más tiempo para pensar antes de seleccionar
+const POINT_NAV_HOLD_MS = 900; // señalar flecha para cambiar categoría
 const RESET_HOLD_MS   = 2500;
 const NAV_HOLD_MS     = 600;
 const COOLDOWN_MS     = 1200;
@@ -154,7 +155,7 @@ let entryStart           = null;  // cuándo empezó la fase de entrada del gest
 let holdStart            = null;  // cuándo empezó la fase de hold (tras superar ENTRY_MS)
 let holdInterruptGesture = null;
 let holdInterruptStart   = null;
-let pointTargetId        = null;
+let pointTargetKey       = null;
 
 function updateHold(gesture, ms) {
   // Gesto distinto al activo
@@ -341,7 +342,7 @@ function triggerCooldown() {
   holdStart            = null;
   holdInterruptGesture = null;
   holdInterruptStart   = null;
-  pointTargetId        = null;
+  pointTargetKey       = null;
   setTimeout(() => { gestureCooldown = false; }, COOLDOWN_MS);
 }
 
@@ -386,7 +387,8 @@ function setProgressBarColor(phase) {
 
 // Proyecta la dirección lm[5]→lm[8] un 40% más allá para detectar
 // hacia dónde apunta el dedo, no solo dónde está la punta.
-function getHoveredCard(lm) {
+// Devuelve objetivo de point: producto o flecha de navegación.
+function getPointTarget(lm) {
   const dx    = lm[8].x - lm[5].x;
   const dy    = lm[8].y - lm[5].y;
   const projX = lm[8].x + dx * 0.4;
@@ -402,35 +404,70 @@ function getHoveredCard(lm) {
   ptr.style.left    = tipScreenX + 'px';
   ptr.style.top     = tipScreenY + 'px';
 
-  let found = null;
-  let bestScore = Infinity;
-  const HIT_MARGIN = 28;
+  let itemFound = null;
+  let itemBestScore = Infinity;
+  const ITEM_HIT_MARGIN = 28;
 
   document.querySelectorAll('.menu-card').forEach(card => {
     const r  = card.getBoundingClientRect();
-    const ok = screenX >= r.left - HIT_MARGIN && screenX <= r.right  + HIT_MARGIN
-            && screenY >= r.top  - HIT_MARGIN && screenY <= r.bottom + HIT_MARGIN;
+    const ok = screenX >= r.left - ITEM_HIT_MARGIN && screenX <= r.right  + ITEM_HIT_MARGIN
+            && screenY >= r.top  - ITEM_HIT_MARGIN && screenY <= r.bottom + ITEM_HIT_MARGIN;
 
     if (ok) {
       const cx = r.left + r.width / 2;
       const cy = r.top  + r.height / 2;
       const score = Math.hypot(screenX - cx, screenY - cy);
-      if (score < bestScore) {
-        bestScore = score;
-        found = card.dataset.id;
+      if (score < itemBestScore) {
+        itemBestScore = score;
+        itemFound = card.dataset.id;
       }
     }
   });
 
-  document.querySelectorAll('.menu-card').forEach(card => {
-    card.classList.toggle('hovered', card.dataset.id === found);
+  let navFound = null;
+  let navBestScore = Infinity;
+  const NAV_HIT_MARGIN = 20;
+
+  document.querySelectorAll('.arrow-btn[data-nav]').forEach(btn => {
+    const r  = btn.getBoundingClientRect();
+    const ok = screenX >= r.left - NAV_HIT_MARGIN && screenX <= r.right  + NAV_HIT_MARGIN
+            && screenY >= r.top  - NAV_HIT_MARGIN && screenY <= r.bottom + NAV_HIT_MARGIN;
+
+    if (ok) {
+      const cx = r.left + r.width / 2;
+      const cy = r.top  + r.height / 2;
+      const score = Math.hypot(screenX - cx, screenY - cy);
+      if (score < navBestScore) {
+        navBestScore = score;
+        navFound = btn.dataset.nav;
+      }
+    }
   });
-  return found;
+
+  let target = null;
+  if (itemFound && navFound) {
+    target = itemBestScore <= navBestScore
+      ? { kind: 'item', value: itemFound }
+      : { kind: 'nav', value: navFound };
+  } else if (itemFound) {
+    target = { kind: 'item', value: itemFound };
+  } else if (navFound) {
+    target = { kind: 'nav', value: navFound };
+  }
+
+  document.querySelectorAll('.menu-card').forEach(card => {
+    card.classList.toggle('hovered', target?.kind === 'item' && card.dataset.id === target.value);
+  });
+  document.querySelectorAll('.arrow-btn[data-nav]').forEach(btn => {
+    btn.classList.toggle('hovered', target?.kind === 'nav' && btn.dataset.nav === target.value);
+  });
+  return target;
 }
 
 function hidePointer() {
   if (pointerEl) pointerEl.style.display = 'none';
   document.querySelectorAll('.menu-card').forEach(c => c.classList.remove('hovered'));
+  document.querySelectorAll('.arrow-btn[data-nav]').forEach(b => b.classList.remove('hovered'));
 }
 
 function animateHoldRing(id, progress) {
@@ -489,7 +526,7 @@ function onHandResults(results) {
     holdStart            = null;
     holdInterruptGesture = null;
     holdInterruptStart   = null;
-    pointTargetId        = null;
+    pointTargetKey       = null;
     navEntryStart = null;
     navHoldStart  = null;
     navFired      = false;
@@ -524,12 +561,13 @@ function onHandResults(results) {
 
   // SEÑALAR + mantener: selecciona el producto apuntado
   if (gesture === 'point') {
-    const hoveredId = getHoveredCard(lm);
+    const target = getPointTarget(lm);
+    const targetKey = target ? (target.kind + ':' + target.value) : null;
 
     // Sin objetivo no seguimos acumulando tiempo.
-    if (!hoveredId) {
+    if (!target) {
       activeGesture = 'point';
-      pointTargetId = null;
+      pointTargetKey = null;
       entryStart    = Date.now();
       holdStart     = null;
       clearAllHoldRings();
@@ -538,10 +576,10 @@ function onHandResults(results) {
       return;
     }
 
-    // Si cambiamos de tarjeta, reiniciamos entrada+hold para anclar la selección.
-    if (activeGesture !== 'point' || pointTargetId !== hoveredId) {
+    // Si cambiamos de objetivo, reiniciamos entrada+hold para anclar la selección.
+    if (activeGesture !== 'point' || pointTargetKey !== targetKey) {
       activeGesture = 'point';
-      pointTargetId = hoveredId;
+      pointTargetKey = targetKey;
       entryStart    = Date.now();
       holdStart     = null;
       clearAllHoldRings();
@@ -557,14 +595,25 @@ function onHandResults(results) {
     }
 
     const elapsed   = Date.now() - holdStart;
-    const progress  = Math.min(elapsed / POINT_HOLD_MS, 1);
+    const holdMs    = target.kind === 'nav' ? POINT_NAV_HOLD_MS : POINT_HOLD_MS;
+    const progress  = Math.min(elapsed / holdMs, 1);
     setProgressBarColor('hold');
-    setProgressBar(0); // el punto usa el anillo de la tarjeta, no la barra global
+    if (target.kind === 'item') {
+      setProgressBar(0); // en productos usamos anillo local
+      animateHoldRing(target.value, progress);
+    } else {
+      clearAllHoldRings();
+      setProgressBar(progress); // en flechas usamos barra global
+    }
 
-    animateHoldRing(hoveredId, progress);
-    if (elapsed >= POINT_HOLD_MS) {
-      selectItem(hoveredId);
-      animateCardSelect(hoveredId);
+    if (elapsed >= holdMs) {
+      if (target.kind === 'item') {
+        selectItem(target.value);
+        animateCardSelect(target.value);
+      } else {
+        sendNavigate(target.value);
+        showToast(target.value === 'right' ? 'Siguiente categoría ▶' : '◀ Categoría anterior');
+      }
       hidePointer();
       triggerCooldown();
     }
@@ -572,7 +621,7 @@ function onHandResults(results) {
   }
 
   if (activeGesture === 'point') {
-    pointTargetId = null;
+    pointTargetKey = null;
     clearAllHoldRings();
     hidePointer();
   }
