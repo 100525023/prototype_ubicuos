@@ -5,6 +5,70 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Display — TouchKiosk</title>
   <link rel="stylesheet" href="/css/shared.css" />
+  <style>
+    /* Panel de historial de pedidos */
+    .d-history {
+      background: var(--off);
+      border: 1px solid var(--light);
+      border-radius: var(--radius-lg);
+      padding: 1.4rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      overflow-y: auto;
+    }
+    .d-history-label {
+      font-size: 0.68rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--mid);
+      margin-bottom: 0.3rem;
+    }
+    .d-history-row {
+      background: var(--white);
+      border: 1px solid var(--light);
+      border-radius: var(--radius);
+      padding: 0.6rem 0.9rem;
+      display: flex;
+      align-items: baseline;
+      gap: 0.6rem;
+      font-size: 0.82rem;
+      animation: item-enter var(--dur-base) var(--ease);
+    }
+    .d-history-num {
+      font-weight: 700;
+      font-size: 1rem;
+      color: var(--black);
+      min-width: 32px;
+    }
+    .d-history-items {
+      flex: 1;
+      color: var(--dark);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .d-history-total {
+      font-weight: 600;
+      color: var(--black);
+      white-space: nowrap;
+    }
+    .d-history-time {
+      color: var(--mid);
+      font-size: 0.75rem;
+      white-space: nowrap;
+    }
+    .d-history-empty {
+      color: var(--mid);
+      font-size: 0.82rem;
+      padding: 0.5rem 0;
+    }
+    /* Layout: 3 columnas en el main cuando hay historial */
+    .d-main {
+      grid-template-columns: 1fr 220px 220px !important;
+    }
+  </style>
 </head>
 <body>
 
@@ -19,7 +83,7 @@
 
     <!-- Panel izquierdo: resumen del pedido en tiempo real -->
     <div class="d-order">
-      <div class="d-order-label">Resumen del pedido</div>
+      <div class="d-order-label">Pedido actual</div>
 
       <div class="d-status idle" id="d-status">
         <span class="d-status-icon" id="d-status-icon">⏳</span>
@@ -36,6 +100,14 @@
       </div>
     </div>
 
+    <!-- Panel central: historial de pedidos confirmados -->
+    <div class="d-history">
+      <div class="d-history-label">Últimos pedidos</div>
+      <div id="d-history-list">
+        <div class="d-history-empty">Sin pedidos aún</div>
+      </div>
+    </div>
+
     <!-- Panel derecho: guía de gestos -->
     <div class="d-guide">
       <div class="d-guide-label">Gestos</div>
@@ -44,7 +116,7 @@
         <span class="d-g-icon">🚶</span>
         <div>
           <div class="d-g-name">Acercarse</div>
-          <div class="d-g-desc">Inicia la sesión automáticamente</div>
+          <div class="d-g-desc">Inicia la sesión</div>
         </div>
       </div>
 
@@ -52,22 +124,22 @@
         <span class="d-g-icon">☝️</span>
         <div>
           <div class="d-g-name">Señalar + mantener</div>
-          <div class="d-g-desc">Selecciona un producto del menú</div>
+          <div class="d-g-desc">Selecciona un producto</div>
         </div>
       </div>
 
-      <div class="d-gesture-card" id="g-tilt">
+      <div class="d-gesture-card" id="g-victory">
         <span class="d-g-icon">✌️</span>
         <div>
-          <div class="d-g-name">2 dedos · mantener</div>
+          <div class="d-g-name">V mano derecha · mantener</div>
           <div class="d-g-desc">Siguiente categoría</div>
         </div>
       </div>
 
       <div class="d-gesture-card" id="g-three">
-        <span class="d-g-icon">🤟</span>
+        <span class="d-g-icon">✌️</span>
         <div>
-          <div class="d-g-name">3 dedos · mantener</div>
+          <div class="d-g-name">V mano izquierda · mantener</div>
           <div class="d-g-desc">Categoría anterior</div>
         </div>
       </div>
@@ -75,24 +147,24 @@
       <div class="d-gesture-card" id="g-thumb">
         <span class="d-g-icon">👍</span>
         <div>
-          <div class="d-g-name">Pulgar arriba</div>
-          <div class="d-g-desc">Confirma selección o pago</div>
+          <div class="d-g-name">Pulgar arriba · mantener</div>
+          <div class="d-g-desc">Confirma o paga</div>
         </div>
       </div>
 
       <div class="d-gesture-card" id="g-palm">
         <span class="d-g-icon">✋</span>
         <div>
-          <div class="d-g-name">Palma abierta</div>
+          <div class="d-g-name">Palma · mantener</div>
           <div class="d-g-desc">Cancela el último paso</div>
         </div>
       </div>
 
-      <div class="d-gesture-card" id="g-victory">
-        <span class="d-g-icon">✌️</span>
+      <div class="d-gesture-card" id="g-fist">
+        <span class="d-g-icon">✊</span>
         <div>
-          <div class="d-g-name">V mantenida (2 s)</div>
-          <div class="d-g-desc">Elimina todo el pedido</div>
+          <div class="d-g-name">Puño 2.5 s</div>
+          <div class="d-g-desc">Borra todo el pedido</div>
         </div>
       </div>
 
@@ -100,7 +172,7 @@
         <span class="d-g-icon">🎙️</span>
         <div>
           <div class="d-g-name">Voz</div>
-          <div class="d-g-desc">"burger", "confirmar", "siguiente"</div>
+          <div class="d-g-desc">"hamburguesa", "confirmar"…</div>
         </div>
       </div>
     </div>
@@ -149,11 +221,15 @@ socket.on('state:sync', (state) => {
   setStatus(state.status);
   renderItems(state.items || [], state.total || 0);
   document.getElementById('d-category').textContent =
-    `Categoría: ${state.currentCategory || '—'}`;
+    'Categoría: ' + (state.currentCategory || '—');
+});
+
+socket.on('order:history', (history) => {
+  renderHistory(history);
 });
 
 socket.on('ui:order-done', ({ orderNumber }) => {
-  document.getElementById('d-done-number').textContent = `#${orderNumber}`;
+  document.getElementById('d-done-number').textContent = '#' + orderNumber;
   document.getElementById('d-done-overlay').classList.add('show');
   setStatus('done');
   setTimeout(() => {
@@ -176,7 +252,7 @@ socket.on('gesture:confirm', () => flashGesture('g-thumb'));
 function setStatus(status) {
   const s  = STATUS_MAP[status] || STATUS_MAP.idle;
   const el = document.getElementById('d-status');
-  el.className = `d-status ${s.cls}`;
+  el.className = 'd-status ' + s.cls;
   document.getElementById('d-status-icon').textContent = s.icon;
   document.getElementById('d-status-text').textContent = s.text;
 }
@@ -184,27 +260,43 @@ function setStatus(status) {
 function renderItems(items, total) {
   const list    = document.getElementById('d-items');
   const totalEl = document.getElementById('d-total');
-
   if (!items.length) {
     list.innerHTML = '<div class="d-empty">Sin artículos todavía</div>';
     totalEl.textContent = '0.00 €';
     return;
   }
-
   list.innerHTML = '';
   items.forEach(item => {
     const row = document.createElement('div');
     row.className = 'd-item-row';
-    row.innerHTML = `
-      <span class="d-item-emoji">${item.emoji}</span>
-      <span class="d-item-name">${item.name}</span>
-      <span class="d-item-qty">x${item.qty}</span>
-      <span class="d-item-price">${(item.price * item.qty).toFixed(2)} €</span>
-    `;
+    row.innerHTML =
+      '<span class="d-item-emoji">' + item.emoji + '</span>' +
+      '<span class="d-item-name">'  + item.name  + '</span>' +
+      '<span class="d-item-qty">x'  + item.qty   + '</span>' +
+      '<span class="d-item-price">' + (item.price * item.qty).toFixed(2) + ' €</span>';
     list.appendChild(row);
   });
+  totalEl.textContent = total.toFixed(2) + ' €';
+}
 
-  totalEl.textContent = `${total.toFixed(2)} €`;
+function renderHistory(history) {
+  const list = document.getElementById('d-history-list');
+  if (!history || !history.length) {
+    list.innerHTML = '<div class="d-history-empty">Sin pedidos aún</div>';
+    return;
+  }
+  list.innerHTML = '';
+  history.forEach(h => {
+    const row = document.createElement('div');
+    row.className = 'd-history-row';
+    const itemsStr = h.items.map(i => i.emoji + ' ' + i.name + (i.qty > 1 ? ' x' + i.qty : '')).join(', ');
+    row.innerHTML =
+      '<span class="d-history-num">#' + h.number + '</span>' +
+      '<span class="d-history-items">' + itemsStr + '</span>' +
+      '<span class="d-history-total">' + h.total.toFixed(2) + ' €</span>' +
+      '<span class="d-history-time">'  + h.timestamp + '</span>';
+    list.appendChild(row);
+  });
 }
 
 function flashGesture(id) {

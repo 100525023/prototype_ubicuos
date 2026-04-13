@@ -15,12 +15,9 @@ app.get('/display', (_, res) => res.sendFile(path.join(__dirname, '../public/dis
 app.get('/api/menu', (_, res) => res.json(getMenu()));
 
 
-// Estado compartido del pedido
-//
-// Es la única fuente de verdad para todos los clientes conectados.
-// Cualquier cambio se propaga inmediatamente mediante broadcast().
-
-let orderState = freshState();
+// Estado compartido del pedido — única fuente de verdad para todos los clientes.
+let orderState   = freshState();
+let orderHistory = [];  // historial de los últimos pedidos confirmados (máx. 5)
 
 function freshState() {
   return { items: [], total: 0, status: 'idle', currentCategory: 'burgers' };
@@ -30,9 +27,12 @@ function recalcTotal() {
   orderState.total = orderState.items.reduce((s, i) => s + i.price * i.qty, 0);
 }
 
-// Envía el estado completo a todos los clientes conectados
 function broadcast() {
   io.emit('state:sync', orderState);
+}
+
+function broadcastHistory() {
+  io.emit('order:history', orderHistory);
 }
 
 
@@ -42,8 +42,9 @@ io.on('connection', (socket) => {
   const clientType = socket.handshake.query.type || 'desconocido';
   console.log(`[+] ${clientType} conectado: ${socket.id}`);
 
-  // Al conectar enviamos el estado actual para que la pantalla se sincronice
+  // Sincronizamos estado e historial al conectar
   socket.emit('state:sync', orderState);
+  socket.emit('order:history', orderHistory);
 
   // Detección de presencia: activa la sesión desde la pantalla de inicio
   socket.on('gesture:presence', () => {
@@ -136,13 +137,21 @@ io.on('connection', (socket) => {
 });
 
 
-// Finalización del pedido
-
 function finaliseOrder() {
   const orderNumber = Math.floor(Math.random() * 90) + 10;
+
+  // Guardamos el pedido en el historial (máximo 5 entradas)
+  orderHistory.unshift({
+    number:    orderNumber,
+    items:     orderState.items.map(i => ({ name: i.name, emoji: i.emoji, qty: i.qty })),
+    total:     orderState.total,
+    timestamp: new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }),
+  });
+  if (orderHistory.length > 5) orderHistory.pop();
+
   io.emit('ui:order-done', { orderNumber, total: orderState.total });
+  broadcastHistory();
   orderState = freshState();
-  // Esperamos a que la pantalla de confirmación termine de mostrarse
   setTimeout(broadcast, 4000);
 }
 

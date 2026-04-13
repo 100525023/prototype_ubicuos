@@ -9,61 +9,59 @@ let cameraHidden     = false;
 let presenceDetected = false;
 
 // Temporización
-// GESTURE_HOLD_MS: tiempo mínimo para activar thumb_up / open_palm.
-// Es el único mecanismo anti-accidental: simple, visible y consistente.
-const GESTURE_HOLD_MS = 600;
-const POINT_HOLD_MS   = 800;
-const RESET_HOLD_MS   = 2000;
-const COOLDOWN_MS     = 1000;
+const GESTURE_HOLD_MS = 700;   // thumb_up y open_palm
+const POINT_HOLD_MS   = 900;
+const RESET_HOLD_MS   = 2500;
+const NAV_HOLD_MS     = 600;
+const COOLDOWN_MS     = 1200;
 
-let activeGesture   = null;
-let holdStart       = null;
 let gestureCooldown = false;
 
 
 // Clasificación de gestos
 //
-// Para los 4 dedos normales usamos tip.y < pip.y (punta por encima del nudillo).
-// Funciona bien porque ambos puntos del mismo dedo se proyectan igual bajo perspectiva.
+// Dedos normales: tip.y < pip.y → extendido. Estable bajo perspectiva porque
+// ambos puntos del mismo dedo se deforman igual.
 //
-// Para el PULGAR no usamos Y porque su eje de movimiento es horizontal.
-// Usamos la distancia lateral entre la punta del pulgar (lm[4]) y la base del
-// meñique (lm[17]): cuando el pulgar está extendido hacia fuera esa distancia
-// es grande; cuando está recogido dentro del puño es pequeña.
-// Normalizamos con el ancho de la palma (lm[5] a lm[17]) para ser independientes
-// del tamaño de mano y la distancia a la cámara.
+// Pulgar: su eje es horizontal, no vertical. Usamos DOS condiciones combinadas:
+//   1. thumbSpread: distancia punta(lm[4]) – base meñique(lm[17]) normalizada
+//      con el ancho de palma. Detecta si el pulgar está físicamente separado.
+//   2. lm[4].y < lm[5].y - margen: la punta del pulgar está POR ENCIMA de la
+//      base del índice. Esto elimina falsos positivos cuando el puño apunta
+//      hacia la cámara o está de lado (en esos casos el pulgar queda al nivel
+//      o por debajo de lm[5] aunque esté "separado" lateralmente).
+// Ambas condiciones deben cumplirse a la vez.
 //
-// Índices MediaPipe usados:
-//   pulgar tip=4, mcp=2, base meñique=17, base índice=5
-//   índice:  pip=6  tip=8
-//   corazón: pip=10 tip=12
-//   anular:  pip=14 tip=16
-//   meñique: pip=18 tip=20
+// Índices MediaPipe:
+//   pulgar: mcp=2, tip=4
+//   índice: mcp=5, pip=6, tip=8
+//   corazón: mcp=9, pip=10, tip=12
+//   anular: pip=14, tip=16
+//   meñique: mcp=17, pip=18, tip=20
 
 function up(lm, tip, pip) { return lm[tip].y < lm[pip].y; }
 function dn(lm, tip, pip) { return lm[tip].y > lm[pip].y; }
 
 function palmWidth(lm) {
-  const dx = lm[5].x - lm[17].x;
-  const dy = lm[5].y - lm[17].y;
-  return Math.hypot(dx, dy) || 0.001;
+  return Math.hypot(lm[5].x - lm[17].x, lm[5].y - lm[17].y) || 0.001;
 }
 
 function thumbSpread(lm) {
-  const dx = lm[4].x - lm[17].x;
-  const dy = lm[4].y - lm[17].y;
-  return Math.hypot(dx, dy) / palmWidth(lm);
+  return Math.hypot(lm[4].x - lm[17].x, lm[4].y - lm[17].y) / palmWidth(lm);
 }
 
-// Pulgar arriba: pulgar bien separado de la palma + los 4 dedos cerrados.
-// El umbral 1.4 equivale a que la punta esté al menos 1.4× el ancho de la palma
-// de distancia del lado del meñique — imposible de cumplir con el pulgar dentro.
+// Pulgar arriba: separación lateral + punta claramente por encima de la base
+// del índice + los 4 dedos cerrados.
+// lm[4].y < lm[5].y - 0.04 es la clave: en un puño de frente o de lado
+// el pulgar nunca supera ese umbral aunque parezca separado.
 function isThumbUp(lm) {
-  if (thumbSpread(lm) < 1.4)  return false;
-  if (up(lm, 8,  6))          return false;
-  if (up(lm, 12, 10))         return false;
-  if (up(lm, 16, 14))         return false;
-  if (up(lm, 20, 18))         return false;
+  if (thumbSpread(lm) < 1.5)          return false;  // pulgar no suficientemente separado
+  if (lm[4].y > lm[5].y - 0.04)       return false;  // punta no está por encima del índice mcp
+  if (lm[4].y > lm[9].y)              return false;  // tampoco por encima del corazón mcp
+  if (up(lm, 8,  6))                  return false;  // índice extendido → no es puño
+  if (up(lm, 12, 10))                 return false;
+  if (up(lm, 16, 14))                 return false;
+  if (up(lm, 20, 18))                 return false;
   return true;
 }
 
@@ -72,58 +70,68 @@ function isOpenPalm(lm) {
   return up(lm, 8, 6) && up(lm, 12, 10) && up(lm, 16, 14) && up(lm, 20, 18);
 }
 
-// Señalar: solo el índice extendido.
+// Señalar: solo el índice extendido, los demás cerrados.
 function isPoint(lm) {
   return up(lm, 8, 6) && dn(lm, 12, 10) && dn(lm, 16, 14) && dn(lm, 20, 18);
 }
 
-// Tres dedos: índice, corazón y anular extendidos, meñique cerrado.
-// Gesto de navegación "anterior" (intuitivo: mostrar dedos para pasar página).
-function isThreeFingers(lm) {
-  return up(lm, 8, 6) && up(lm, 12, 10) && up(lm, 16, 14) && dn(lm, 20, 18);
-}
-
-// Victory/V: índice y corazón extendidos, anular y meñique cerrados.
-// Gesto de navegación "siguiente".
+// Victory/V: índice y corazón extendidos, anular y meñique cerrados. → siguiente
 function isVictory(lm) {
   return up(lm, 8, 6) && up(lm, 12, 10) && dn(lm, 16, 14) && dn(lm, 20, 18);
 }
 
-// El orden importa: gestos más específicos primero.
+
+// Puño cerrado: ningún dedo extendido. → reset (mantenido)
+function isFist(lm) {
+  return dn(lm, 8, 6) && dn(lm, 12, 10) && dn(lm, 16, 14) && dn(lm, 20, 18)
+      && thumbSpread(lm) < 1.1;  // pulgar también recogido
+}
+
+// El orden importa: más específicos primero para evitar ambigüedades.
 function classifyGesture(lm) {
-  if (isThumbUp(lm))      return 'thumb_up';
-  if (isThreeFingers(lm)) return 'three';
-  if (isVictory(lm))      return 'victory';
-  if (isOpenPalm(lm))     return 'open_palm';
-  if (isPoint(lm))        return 'point';
+  if (isThumbUp(lm))  return 'thumb_up';
+  if (isVictory(lm))  return 'victory';
+  if (isOpenPalm(lm)) return 'open_palm';
+  if (isFist(lm))     return 'fist';
+  if (isPoint(lm))    return 'point';
   return 'other';
 }
 
 
-// Navegación por número de dedos.
-// victory (2 dedos) → siguiente categoría.
-// three   (3 dedos) → categoría anterior.
-// Requiere mantener el gesto NAV_HOLD_MS ms para evitar accidentales.
-const NAV_HOLD_MS = 500;
+// Navegación: V con cualquier mano.
+// Mano derecha del usuario → siguiente, mano izquierda → anterior.
+// La cámara está espejada, así que MediaPipe etiqueta al revés:
+//   handedness 'Right' = mano izquierda real del usuario → 'left'
+//   handedness 'Left'  = mano derecha real del usuario   → 'right'
+let navEntryStart = null;
+let navHoldStart  = null;
+let navFired      = false;
 
-let navGesture = null;
-let navStart   = null;
-let navFired   = false;
-
-function handleNav(gesture) {
-  const isNav = gesture === 'victory' || gesture === 'three';
-  if (!isNav) { navGesture = null; navStart = null; navFired = false; return; }
-  if (gesture !== navGesture) {
-    navGesture = gesture;
-    navStart   = Date.now();
-    navFired   = false;
+function handleNav(gesture, handedness) {
+  if (gesture !== 'victory') {
+    navEntryStart = null;
+    navHoldStart  = null;
+    navFired      = false;
     return;
   }
   if (navFired || gestureCooldown) return;
-  const prog = Math.min((Date.now() - navStart) / NAV_HOLD_MS, 1);
+
+  // Fase de entrada
+  if (navEntryStart === null) { navEntryStart = Date.now(); return; }
+  if (navHoldStart === null) {
+    const entryProg = Math.min((Date.now() - navEntryStart) / ENTRY_MS, 1);
+    setProgressBarColor('entry');
+    setProgressBar(entryProg);
+    if (entryProg < 1) return;
+    navHoldStart = Date.now();
+  }
+
+  // Fase de hold
+  const prog = Math.min((Date.now() - navHoldStart) / NAV_HOLD_MS, 1);
+  setProgressBarColor('hold');
   setProgressBar(prog);
   if (prog >= 1) {
-    const dir = gesture === 'victory' ? 'right' : 'left';
+    const dir = handedness === 'Left' ? 'right' : 'left';
     socket.emit('gesture:navigate', { direction: dir });
     showToast(dir === 'right' ? 'Siguiente categoría ▶' : '◀ Categoría anterior');
     navFired = true;
@@ -132,10 +140,56 @@ function handleNav(gesture) {
 }
 
 
-// Hold universal: devuelve progreso 0-1 para el gesto activo.
-// Si el gesto cambia, reinicia el contador.
+// Temporización de gestos discretos.
+// Cada gesto pasa por dos fases antes de activarse:
+//   1. ENTRADA (ENTRY_MS): el gesto debe mantenerse este tiempo sin interrupciones
+//      antes de que empiece a contar el hold. Filtra gestos de paso.
+//   2. HOLD: el tiempo de confirmación propiamente dicho.
+// La barra de progreso muestra la fase de hold; durante la entrada aparece en gris.
+const ENTRY_MS          = 400;
+const HOLD_TOLERANCE_MS = 200;  // margen para frames rogue sin reiniciar el hold
+
+let activeGesture        = null;
+let entryStart           = null;  // cuándo empezó la fase de entrada del gesto activo
+let holdStart            = null;  // cuándo empezó la fase de hold (tras superar ENTRY_MS)
+let holdInterruptGesture = null;
+let holdInterruptStart   = null;
+
 function updateHold(gesture, ms) {
-  if (gesture !== activeGesture) { activeGesture = gesture; holdStart = Date.now(); }
+  // Gesto distinto al activo
+  if (gesture !== activeGesture) {
+    if (gesture !== holdInterruptGesture) {
+      holdInterruptGesture = gesture;
+      holdInterruptStart   = Date.now();
+    }
+    // Dentro del margen de tolerancia: ignoramos el frame rogue
+    if (Date.now() - holdInterruptStart < HOLD_TOLERANCE_MS) {
+      return holdStart ? Math.min((Date.now() - holdStart) / ms, 1) : 0;
+    }
+    // Fuera del margen: cambiamos de gesto activo y reiniciamos
+    activeGesture        = gesture;
+    entryStart           = Date.now();
+    holdStart            = null;
+    holdInterruptGesture = null;
+    holdInterruptStart   = null;
+    setProgressBarColor('entry');
+    return 0;
+  }
+
+  // Gesto correcto
+  holdInterruptGesture = null;
+  holdInterruptStart   = null;
+
+  // Fase de entrada: aún no ha pasado ENTRY_MS
+  if (holdStart === null) {
+    const entryProg = Math.min((Date.now() - entryStart) / ENTRY_MS, 1);
+    setProgressBarColor('entry');
+    setProgressBar(entryProg);
+    if (entryProg < 1) return 0;
+    holdStart = Date.now();  // entrada superada, arranca el hold
+  }
+
+  setProgressBarColor('hold');
   return Math.min((Date.now() - holdStart) / ms, 1);
 }
 
@@ -280,9 +334,12 @@ function showToast(msg) {
 }
 
 function triggerCooldown() {
-  gestureCooldown = true;
-  activeGesture   = null;
-  holdStart       = null;
+  gestureCooldown      = true;
+  activeGesture        = null;
+  entryStart           = null;
+  holdStart            = null;
+  holdInterruptGesture = null;
+  holdInterruptStart   = null;
   setTimeout(() => { gestureCooldown = false; }, COOLDOWN_MS);
 }
 
@@ -293,8 +350,8 @@ function clearAllHoldRings() {
 
 // Cursor gestual y barra de progreso
 
-let pointerEl    = null;
-let progressBar  = null;
+let pointerEl   = null;
+let progressBar = null;
 
 function getOrCreatePointer() {
   if (!pointerEl) {
@@ -312,14 +369,21 @@ function setProgressBar(pct) {
   if (!progressBar) {
     progressBar = document.createElement('div');
     progressBar.style.cssText =
-      'position:fixed;bottom:0;left:0;height:4px;background:#111;z-index:998;pointer-events:none;width:0;transition:width 0.05s linear;';
+      'position:fixed;bottom:0;left:0;height:4px;background:#111;' +
+      'z-index:998;pointer-events:none;width:0;transition:width 0.06s linear;';
     document.body.appendChild(progressBar);
   }
   progressBar.style.width = (pct * 100) + '%';
 }
 
-// Proyecta la dirección del índice (lm[5]→lm[8]) un 40% más allá de la punta
-// para encontrar hacia dónde apunta realmente el dedo.
+// 'entry' → gris (esperando intención), 'hold' → negro (confirmando)
+function setProgressBarColor(phase) {
+  if (!progressBar) return;
+  progressBar.style.background = phase === 'entry' ? '#bbb' : '#111';
+}
+
+// Proyecta la dirección lm[5]→lm[8] un 40% más allá para detectar
+// hacia dónde apunta el dedo, no solo dónde está la punta.
 function getHoveredCard(lm) {
   const dx    = lm[8].x - lm[5].x;
   const dy    = lm[8].y - lm[5].y;
@@ -339,8 +403,8 @@ function getHoveredCard(lm) {
   let found = null;
   document.querySelectorAll('.menu-card').forEach(card => {
     const r  = card.getBoundingClientRect();
-    const ok = screenX >= r.left  - 40 && screenX <= r.right + 40
-            && screenY >= r.top   - 40 && screenY <= r.bottom + 40;
+    const ok = screenX >= r.left - 40 && screenX <= r.right  + 40
+            && screenY >= r.top  - 40 && screenY <= r.bottom + 40;
     card.classList.toggle('hovered', ok);
     if (ok) found = card.dataset.id;
   });
@@ -384,8 +448,8 @@ async function initMediaPipe() {
   hands.setOptions({
     maxNumHands:            1,
     modelComplexity:        1,
-    minDetectionConfidence: 0.65,
-    minTrackingConfidence:  0.5,
+    minDetectionConfidence: 0.7,
+    minTrackingConfidence:  0.55,
   });
   hands.onResults(onHandResults);
   const camera = new Camera(videoEl, {
@@ -403,18 +467,22 @@ function onHandResults(results) {
 
   if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
     gestureLabel.textContent = '—';
-    activeGesture = null;
-    holdStart     = null;
-    navGesture    = null;
-    navStart      = null;
+    activeGesture        = null;
+    entryStart           = null;
+    holdStart            = null;
+    holdInterruptGesture = null;
+    holdInterruptStart   = null;
+    navEntryStart = null;
+    navHoldStart  = null;
     navFired      = false;
     hidePointer();
     setProgressBar(0);
     return;
   }
 
-  const lm      = results.multiHandLandmarks[0];
-  const gesture = classifyGesture(lm);
+  const lm         = results.multiHandLandmarks[0];
+  const handedness = results.multiHandedness?.[0]?.label ?? 'Right';
+  const gesture    = classifyGesture(lm);
 
   drawConnectors(canvasCtx, lm, HAND_CONNECTIONS, { color: '#bbb', lineWidth: 1.5 });
   drawLandmarks(canvasCtx, lm, { color: '#444', lineWidth: 1, radius: 2 });
@@ -426,8 +494,7 @@ function onHandResults(results) {
 
   gestureLabel.textContent = gesture === 'other' ? '—' : gesture;
 
-  // Navegación por dedos: corre siempre en paralelo
-  handleNav(gesture);
+  handleNav(gesture, handedness);
 
   if (gestureCooldown) {
     if (gesture !== 'point') hidePointer();
@@ -439,13 +506,26 @@ function onHandResults(results) {
   if (gesture === 'point') {
     if (activeGesture !== 'point') {
       activeGesture = 'point';
-      holdStart     = Date.now();
+      entryStart    = Date.now();
+      holdStart     = null;
       clearAllHoldRings();
     }
+
+    // Fase de entrada: esperamos ENTRY_MS antes de empezar a contar
+    if (holdStart === null) {
+      const entryProg = Math.min((Date.now() - entryStart) / ENTRY_MS, 1);
+      setProgressBarColor('entry');
+      setProgressBar(entryProg);
+      getHoveredCard(lm); // mostramos el cursor pero sin anillo todavía
+      if (entryProg < 1) return;
+      holdStart = Date.now();
+    }
+
     const elapsed   = Date.now() - holdStart;
     const progress  = Math.min(elapsed / POINT_HOLD_MS, 1);
     const hoveredId = getHoveredCard(lm);
-    setProgressBar(0);
+    setProgressBarColor('hold');
+    setProgressBar(0); // el punto usa el anillo de la tarjeta, no la barra global
     if (hoveredId) {
       animateHoldRing(hoveredId, progress);
       if (elapsed >= POINT_HOLD_MS) {
@@ -465,7 +545,7 @@ function onHandResults(results) {
     hidePointer();
   }
 
-  // PULGAR ARRIBA: confirmar (barra de progreso global)
+  // PULGAR ARRIBA: confirmar
   if (gesture === 'thumb_up') {
     const prog = updateHold('thumb_up', GESTURE_HOLD_MS);
     setProgressBar(prog);
@@ -489,8 +569,20 @@ function onHandResults(results) {
     return;
   }
 
-  // Ningún gesto activo: limpiamos estado
-  if (gesture !== 'victory' && gesture !== 'three') {
+  // PUÑO CERRADO mantenido: reset total del pedido
+  if (gesture === 'fist') {
+    const prog = updateHold('fist', RESET_HOLD_MS);
+    setProgressBar(prog);
+    gestureLabel.textContent = 'reset ' + Math.round(prog * 100) + '%';
+    if (prog >= 1) {
+      socket.emit('session:reset');
+      showToast('Pedido eliminado');
+      triggerCooldown();
+    }
+    return;
+  }
+
+  if (gesture !== 'victory') {
     activeGesture = null;
     holdStart     = null;
     setProgressBar(0);
