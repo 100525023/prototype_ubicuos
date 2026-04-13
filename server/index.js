@@ -83,6 +83,9 @@ io.on('connection', (socket) => {
 
   // Confirmar: primer pulgar → pide confirmación; segundo pulgar → finaliza
   socket.on('gesture:confirm', () => {
+    // Feedback visual para la pantalla display
+    io.emit('gesture:confirm');
+
     if (orderState.status === 'ordering') {
       orderState.status = 'confirming';
       broadcast();

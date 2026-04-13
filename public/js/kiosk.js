@@ -10,7 +10,7 @@ let presenceDetected = false;
 
 // Temporización
 const GESTURE_HOLD_MS = 700;   // thumb_up y open_palm
-const POINT_HOLD_MS   = 900;
+const POINT_HOLD_MS   = 1300;  // más tiempo para pensar antes de seleccionar
 const RESET_HOLD_MS   = 2500;
 const NAV_HOLD_MS     = 600;
 const COOLDOWN_MS     = 1200;
@@ -146,7 +146,7 @@ function handleNav(gesture, handedness) {
 //      antes de que empiece a contar el hold. Filtra gestos de paso.
 //   2. HOLD: el tiempo de confirmación propiamente dicho.
 // La barra de progreso muestra la fase de hold; durante la entrada aparece en gris.
-const ENTRY_MS          = 400;
+const ENTRY_MS          = 500;
 const HOLD_TOLERANCE_MS = 200;  // margen para frames rogue sin reiniciar el hold
 
 let activeGesture        = null;
@@ -154,6 +154,7 @@ let entryStart           = null;  // cuándo empezó la fase de entrada del gest
 let holdStart            = null;  // cuándo empezó la fase de hold (tras superar ENTRY_MS)
 let holdInterruptGesture = null;
 let holdInterruptStart   = null;
+let pointTargetId        = null;
 
 function updateHold(gesture, ms) {
   // Gesto distinto al activo
@@ -340,6 +341,7 @@ function triggerCooldown() {
   holdStart            = null;
   holdInterruptGesture = null;
   holdInterruptStart   = null;
+  pointTargetId        = null;
   setTimeout(() => { gestureCooldown = false; }, COOLDOWN_MS);
 }
 
@@ -401,12 +403,27 @@ function getHoveredCard(lm) {
   ptr.style.top     = tipScreenY + 'px';
 
   let found = null;
+  let bestScore = Infinity;
+  const HIT_MARGIN = 28;
+
   document.querySelectorAll('.menu-card').forEach(card => {
     const r  = card.getBoundingClientRect();
-    const ok = screenX >= r.left - 40 && screenX <= r.right  + 40
-            && screenY >= r.top  - 40 && screenY <= r.bottom + 40;
-    card.classList.toggle('hovered', ok);
-    if (ok) found = card.dataset.id;
+    const ok = screenX >= r.left - HIT_MARGIN && screenX <= r.right  + HIT_MARGIN
+            && screenY >= r.top  - HIT_MARGIN && screenY <= r.bottom + HIT_MARGIN;
+
+    if (ok) {
+      const cx = r.left + r.width / 2;
+      const cy = r.top  + r.height / 2;
+      const score = Math.hypot(screenX - cx, screenY - cy);
+      if (score < bestScore) {
+        bestScore = score;
+        found = card.dataset.id;
+      }
+    }
+  });
+
+  document.querySelectorAll('.menu-card').forEach(card => {
+    card.classList.toggle('hovered', card.dataset.id === found);
   });
   return found;
 }
@@ -472,9 +489,11 @@ function onHandResults(results) {
     holdStart            = null;
     holdInterruptGesture = null;
     holdInterruptStart   = null;
+    pointTargetId        = null;
     navEntryStart = null;
     navHoldStart  = null;
     navFired      = false;
+    clearAllHoldRings();
     hidePointer();
     setProgressBar(0);
     return;
@@ -504,8 +523,24 @@ function onHandResults(results) {
 
   // SEÑALAR + mantener: selecciona el producto apuntado
   if (gesture === 'point') {
-    if (activeGesture !== 'point') {
+    const hoveredId = getHoveredCard(lm);
+
+    // Sin objetivo no seguimos acumulando tiempo.
+    if (!hoveredId) {
       activeGesture = 'point';
+      pointTargetId = null;
+      entryStart    = Date.now();
+      holdStart     = null;
+      clearAllHoldRings();
+      setProgressBarColor('entry');
+      setProgressBar(0);
+      return;
+    }
+
+    // Si cambiamos de tarjeta, reiniciamos entrada+hold para anclar la selección.
+    if (activeGesture !== 'point' || pointTargetId !== hoveredId) {
+      activeGesture = 'point';
+      pointTargetId = hoveredId;
       entryStart    = Date.now();
       holdStart     = null;
       clearAllHoldRings();
@@ -516,31 +551,27 @@ function onHandResults(results) {
       const entryProg = Math.min((Date.now() - entryStart) / ENTRY_MS, 1);
       setProgressBarColor('entry');
       setProgressBar(entryProg);
-      getHoveredCard(lm); // mostramos el cursor pero sin anillo todavía
       if (entryProg < 1) return;
       holdStart = Date.now();
     }
 
     const elapsed   = Date.now() - holdStart;
     const progress  = Math.min(elapsed / POINT_HOLD_MS, 1);
-    const hoveredId = getHoveredCard(lm);
     setProgressBarColor('hold');
     setProgressBar(0); // el punto usa el anillo de la tarjeta, no la barra global
-    if (hoveredId) {
-      animateHoldRing(hoveredId, progress);
-      if (elapsed >= POINT_HOLD_MS) {
-        selectItem(hoveredId);
-        animateCardSelect(hoveredId);
-        hidePointer();
-        triggerCooldown();
-      }
-    } else {
-      clearAllHoldRings();
+
+    animateHoldRing(hoveredId, progress);
+    if (elapsed >= POINT_HOLD_MS) {
+      selectItem(hoveredId);
+      animateCardSelect(hoveredId);
+      hidePointer();
+      triggerCooldown();
     }
     return;
   }
 
   if (activeGesture === 'point') {
+    pointTargetId = null;
     clearAllHoldRings();
     hidePointer();
   }
