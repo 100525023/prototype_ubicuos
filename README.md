@@ -33,7 +33,7 @@ Para el display en otro dispositivo, sustituye `localhost` por la IP del servido
 
 | Gesto | Acción |
 |---|---|
-| Acercarse a la cámara | Inicia la sesión |
+| Mostrar la palma a la cámara | Inicia la sesión |
 | Señalar con el índice y mantener | Selecciona el producto apuntado |
 | ✌️ V con mano derecha y mantener | Siguiente categoría |
 | ✌️ V con mano izquierda y mantener | Categoría anterior |

@@ -46,7 +46,7 @@ io.on('connection', (socket) => {
   socket.emit('state:sync', orderState);
   socket.emit('order:history', orderHistory);
 
-  // Detección de presencia: activa la sesión desde la pantalla de inicio
+  // Señal de inicio desde kiosk (palma mostrada): activa la sesión
   socket.on('gesture:presence', () => {
     if (orderState.status === 'idle') {
       orderState.status = 'browsing';

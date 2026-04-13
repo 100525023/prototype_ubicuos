@@ -506,7 +506,8 @@ function onHandResults(results) {
   drawConnectors(canvasCtx, lm, HAND_CONNECTIONS, { color: '#bbb', lineWidth: 1.5 });
   drawLandmarks(canvasCtx, lm, { color: '#444', lineWidth: 1, radius: 2 });
 
-  if (!presenceDetected) {
+  // Inicio de sesión: requiere palma abierta para empezar.
+  if (!presenceDetected && gesture === 'open_palm') {
     presenceDetected = true;
     socket.emit('gesture:presence');
   }
