@@ -8,7 +8,8 @@ const server = http.createServer(app);
 const io     = new Server(server, { cors: { origin: '*' } });
 
 // Servimos los archivos estáticos de la carpeta public y registramos las rutas principales.
-app.use(express.static(path.join(__dirname, '../public')));
+// redirect:false evita 301 automáticos en rutas tipo /kiosk o /display.
+app.use(express.static(path.join(__dirname, '../public'), { redirect: false }));
 app.get('/',        (_, res) => res.sendFile(path.join(__dirname, '../public/kiosk/index.html')));
 app.get('/kiosk',   (_, res) => res.sendFile(path.join(__dirname, '../public/kiosk/index.html')));
 app.get('/display', (_, res) => res.sendFile(path.join(__dirname, '../public/display/index.html')));
@@ -281,10 +282,12 @@ function handleVoice(text) {
 // aceptan variantes en español e inglés para que el reconocimiento sea más tolerante.
 function itemAliases() {
   return [
-    { id: 'b1', rx: /big burger|big/i },
-    { id: 'b2', rx: /cheese burger|cheese|queso/i },
-    { id: 'b3', rx: /veggie burger|veggie|vegetariana|vegetal/i },
-    { id: 'b4', rx: /double stack|double|doble/i },
+    // Ponemos primero burgers específicas para que "hamburguesa doble"
+    // no se quede en la coincidencia genérica de "hamburguesa".
+    { id: 'b2', rx: /cheese burger|hamburguesa con queso|burger con queso|cheese|queso/i },
+    { id: 'b3', rx: /veggie burger|hamburguesa vegetariana|veggie|vegetariana|vegetal/i },
+    { id: 'b4', rx: /double stack|hamburguesa doble|burger doble|double|doble/i },
+    { id: 'b1', rx: /big burger|\bhamburguesa\b|\bburger\b|big/i },
     { id: 'd1', rx: /\bcola\b|coca cola|coca/i },
     { id: 'd2', rx: /orange juice|zumo de naranja|zumo naranja|naranja/i },
     { id: 'd3', rx: /\bagua\b|water/i },

@@ -48,7 +48,7 @@ Todos los gestos muestran una barra de progreso en la parte inferior de la panta
 
 Activa el micrófono con el botón de la pantalla kiosk. Comandos reconocidos:
 
-- **Productos:** "hamburguesa", "cola", "patatas", "helado"…
+- **Productos:** "hamburguesa" (añade Big Burger por defecto), "cheese burger", "veggie", "doble", "cola", "patatas", "helado"…
 - **Categorías:** "bebidas", "postres", "acompañamientos"
 - **Navegación:** "siguiente", "anterior"
 - **Acciones:** "confirmar", "pagar", "cancelar"
