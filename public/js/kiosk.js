@@ -501,8 +501,9 @@ function hidePointer() {
 function animateHoldRing(id, progress) {
   const ring = document.getElementById('ring-' + id);
   if (!ring) return;
-  ring.style.display    = 'block';
-  ring.style.background = 'conic-gradient(#111 ' + (progress * 360) + 'deg, transparent 0deg)';
+  const pct = Math.max(0, Math.min(progress, 1)) * 100;
+  ring.style.display = 'block';
+  ring.style.setProperty('--hold-progress', pct.toFixed(1) + '%');
 }
 
 // Flash de confirmación cuando el artículo se añade al pedido.

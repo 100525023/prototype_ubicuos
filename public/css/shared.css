@@ -449,7 +449,8 @@ body::after {
   flex: 1;
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 0.85rem;
+  gap: 1.05rem;
+  padding: 0.15rem;
   overflow-y: auto;
 }
 
@@ -457,11 +458,12 @@ body::after {
   background: #fff;
   border: 1.5px solid var(--warm-border);
   border-radius: var(--radius-lg);
-  padding: 1.4rem 1rem 1.1rem;
+  padding: 1.3rem 1rem 1.05rem;
   text-align: center;
   cursor: pointer;
   position: relative;
   overflow: hidden;
+  transform-origin: center center;
   transition: border-color var(--dur-fast), transform var(--dur-fast), box-shadow var(--dur-fast);
   box-shadow: 0 2px 8px rgba(62, 32, 8, 0.06);
 }
@@ -478,7 +480,7 @@ body::after {
 .menu-card:hover,
 .menu-card.hovered {
   border-color: var(--brand);
-  transform: translateY(-3px) scale(1.02);
+  transform: translateY(-2px) scale(1.008);
   box-shadow: 0 10px 28px rgba(201, 74, 26, 0.18);
 }
 
@@ -523,10 +525,25 @@ body::after {
 .hold-ring {
   display: none;
   position: absolute;
-  inset: 0;
-  border-radius: var(--radius-lg);
-  opacity: 0.18;
+  left: 12px;
+  right: 12px;
+  bottom: 10px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(201, 74, 26, 0.18);
+  overflow: hidden;
   pointer-events: none;
+  z-index: 2;
+}
+
+.hold-ring::after {
+  content: '';
+  display: block;
+  width: var(--hold-progress, 0%);
+  height: 100%;
+  background: linear-gradient(90deg, var(--brand), var(--brand-dark));
+  border-radius: inherit;
+  transition: width 0.08s linear;
 }
 
 .nav-arrows {
@@ -806,12 +823,13 @@ body::after {
 }
 
 
-/* Vista de la cámara (esquina inferior derecha) */
+/* Vista de la cámara (esquina inferior izquierda) */
 
 .camera-container {
   position: fixed;
   bottom: 1rem;
-  right: 1rem;
+  left: 1rem;
+  right: auto;
   width: 190px;
   border-radius: var(--radius);
   overflow: hidden;
