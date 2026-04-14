@@ -65,18 +65,25 @@ io.on('connection', (socket) => {
 
   // El usuario navega entre categorías. La dirección puede ser 'right' (siguiente)
   // o 'left' (anterior); usamos módulo para que la lista sea circular.
-  socket.on('gesture:navigate', ({ direction }) => {
+  socket.on('gesture:navigate', (payload = {}) => {
+    const direction = payload?.direction;
+    if (direction !== 'right' && direction !== 'left') return;
+
     const cats = ['burgers', 'drinks', 'sides', 'desserts'];
     const i    = cats.indexOf(orderState.currentCategory);
+    const idx  = i >= 0 ? i : 0;
     orderState.currentCategory = direction === 'right'
-      ? cats[(i + 1) % cats.length]
-      : cats[(i - 1 + cats.length) % cats.length];
+      ? cats[(idx + 1) % cats.length]
+      : cats[(idx - 1 + cats.length) % cats.length];
     broadcast();
   });
 
   // El usuario selecciona un producto. Si ya estaba en el pedido, incrementamos
   // la cantidad en lugar de duplicar la línea.
-  socket.on('gesture:select', ({ itemId }) => {
+  socket.on('gesture:select', (payload = {}) => {
+    const itemId = typeof payload?.itemId === 'string' ? payload.itemId : '';
+    if (!itemId) return;
+
     const item = getMenu().find(m => m.id === itemId);
     if (!item) return;
     const existing = orderState.items.find(i => i.id === itemId);
@@ -123,7 +130,10 @@ io.on('connection', (socket) => {
   });
 
   // Elimina un artículo concreto del pedido (se usa desde el botón × de la UI).
-  socket.on('order:remove-item', ({ itemId }) => {
+  socket.on('order:remove-item', (payload = {}) => {
+    const itemId = typeof payload?.itemId === 'string' ? payload.itemId : '';
+    if (!itemId) return;
+
     orderState.items = orderState.items.filter(i => i.id !== itemId);
     recalcTotal();
     if (orderState.items.length === 0) orderState.status = 'browsing';
@@ -132,8 +142,11 @@ io.on('connection', (socket) => {
 
   // El cliente envía la transcripción de voz en crudo; nosotros la procesamos
   // aquí para mantener toda la lógica de negocio en el servidor.
-  socket.on('voice:command', ({ transcript }) => {
-    const text = transcript.toLowerCase().trim();
+  socket.on('voice:command', (payload = {}) => {
+    const transcript = typeof payload?.transcript === 'string' ? payload.transcript.trim() : '';
+    if (!transcript) return;
+
+    const text = transcript.toLowerCase();
     console.log('[voz]', text);
     io.emit('ui:voice-feedback', { transcript });
     handleVoice(text);

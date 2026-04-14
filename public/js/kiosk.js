@@ -254,8 +254,6 @@ socket.on('ui:voice-feedback', ({ transcript }) => {
   setTimeout(() => voiceBar.classList.add('hidden'), 3000);
 });
 
-socket.on('trigger:cancel', () => sendCancel());
-
 
 // Renderizado de la cuadrícula de productos según la categoría activa.
 function renderMenu() {
@@ -311,6 +309,16 @@ function syncCategoryUI(cat) {
 }
 
 function handleStatusChange(status) {
+  const isIdle = status === 'idle';
+
+  overlayIdle.classList.toggle('active', isIdle);
+  appEl.classList.toggle('hidden', isIdle);
+
+  if (isIdle) {
+    overlayDone.classList.remove('active');
+    presenceDetected = false;
+  }
+
   if (status === 'confirming') {
     confirmModal.classList.remove('hidden');
     modalTotal.textContent = orderState.total.toFixed(2) + ' €';
