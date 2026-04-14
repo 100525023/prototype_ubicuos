@@ -7,7 +7,7 @@ const app    = express();
 const server = http.createServer(app);
 const io     = new Server(server, { cors: { origin: '*' } });
 
-// Servimos los ficheros estáticos desde /public
+// Servimos los archivos estáticos de la carpeta public y registramos las rutas principales.
 app.use(express.static(path.join(__dirname, '../public')));
 app.get('/',        (_, res) => res.sendFile(path.join(__dirname, '../public/kiosk/index.html')));
 app.get('/kiosk',   (_, res) => res.sendFile(path.join(__dirname, '../public/kiosk/index.html')));
@@ -15,38 +15,46 @@ app.get('/display', (_, res) => res.sendFile(path.join(__dirname, '../public/dis
 app.get('/api/menu', (_, res) => res.json(getMenu()));
 
 
-// Estado compartido del pedido — única fuente de verdad para todos los clientes.
+// El estado del pedido vive aquí, en el servidor. Es la única fuente de verdad:
+// todos los clientes (kiosk y display) trabajan con este objeto y reciben sus
+// actualizaciones via broadcast. El historial guarda los últimos 5 pedidos.
 let orderState   = freshState();
-let orderHistory = [];  // historial de los últimos pedidos confirmados (máx. 5)
+let orderHistory = [];
 
+// Estado inicial de un pedido vacío. Se llama al arrancar y al finalizar cada sesión.
 function freshState() {
   return { items: [], total: 0, status: 'idle', currentCategory: 'burgers' };
 }
 
+// Recalcula el total a partir de los artículos actuales. Siempre llamar
+// después de añadir, quitar o modificar cantidades.
 function recalcTotal() {
   orderState.total = orderState.items.reduce((s, i) => s + i.price * i.qty, 0);
 }
 
+// Manda el estado completo a todos los clientes conectados.
 function broadcast() {
   io.emit('state:sync', orderState);
 }
 
+// Notifica el historial actualizado a todos los clientes.
 function broadcastHistory() {
   io.emit('order:history', orderHistory);
 }
 
 
-// Manejadores de eventos de Socket.IO
-
+// Aquí gestionamos cada cliente que se conecta. Tanto el kiosk como el display
+// pasan por aquí; el tipo de cliente viene en el query de la conexión.
 io.on('connection', (socket) => {
   const clientType = socket.handshake.query.type || 'desconocido';
   console.log(`[+] ${clientType} conectado: ${socket.id}`);
 
-  // Sincronizamos estado e historial al conectar
+  // Al conectar mandamos el estado actual para que el cliente se sincronice
+  // aunque se haya unido en mitad de una sesión.
   socket.emit('state:sync', orderState);
   socket.emit('order:history', orderHistory);
 
-  // Señal de inicio desde kiosk (palma mostrada): activa la sesión
+  // El cliente muestra la palma → activamos la sesión y damos la bienvenida.
   socket.on('gesture:presence', () => {
     if (orderState.status === 'idle') {
       orderState.status = 'browsing';
@@ -55,7 +63,8 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Navegación entre categorías (izquierda / derecha)
+  // El usuario navega entre categorías. La dirección puede ser 'right' (siguiente)
+  // o 'left' (anterior); usamos módulo para que la lista sea circular.
   socket.on('gesture:navigate', ({ direction }) => {
     const cats = ['burgers', 'drinks', 'sides', 'desserts'];
     const i    = cats.indexOf(orderState.currentCategory);
@@ -65,7 +74,8 @@ io.on('connection', (socket) => {
     broadcast();
   });
 
-  // Selección de un producto del menú
+  // El usuario selecciona un producto. Si ya estaba en el pedido, incrementamos
+  // la cantidad en lugar de duplicar la línea.
   socket.on('gesture:select', ({ itemId }) => {
     const item = getMenu().find(m => m.id === itemId);
     if (!item) return;
@@ -81,9 +91,10 @@ io.on('connection', (socket) => {
     io.emit('ui:item-added', item);
   });
 
-  // Confirmar: primer pulgar → pide confirmación; segundo pulgar → finaliza
+  // El gesto de confirmación funciona en dos pasos: primero pide confirmación
+  // y, si ya está en modo confirming, finaliza el pedido. El evento también
+  // se reemite para que el display anime el gesto correspondiente.
   socket.on('gesture:confirm', () => {
-    // Feedback visual para la pantalla display
     io.emit('gesture:confirm');
 
     if (orderState.status === 'ordering') {
@@ -95,24 +106,23 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Cancelar: deshace el último paso sin borrar todo el pedido
+  // Cancelar deshace el último paso sin vaciar todo el pedido:
+  // si estaba confirmando, vuelve al pedido; si estaba pidiendo, elimina
+  // el último artículo; si no hay nada que deshacer, reinicia la sesión.
   socket.on('gesture:cancel', () => {
     if (orderState.status === 'confirming') {
-      // Volvemos a la pantalla de pedido
       orderState.status = 'ordering';
     } else if (orderState.status === 'ordering' && orderState.items.length > 0) {
-      // Eliminamos el último artículo añadido
       orderState.items.pop();
       recalcTotal();
       if (orderState.items.length === 0) orderState.status = 'browsing';
     } else {
-      // Nada que deshacer: reiniciamos (solo desde browsing o idle)
       orderState = freshState();
     }
     broadcast();
   });
 
-  // Eliminar un artículo concreto (botón × del panel de pedido)
+  // Elimina un artículo concreto del pedido (se usa desde el botón × de la UI).
   socket.on('order:remove-item', ({ itemId }) => {
     orderState.items = orderState.items.filter(i => i.id !== itemId);
     recalcTotal();
@@ -120,7 +130,8 @@ io.on('connection', (socket) => {
     broadcast();
   });
 
-  // Comando de voz: el cliente envía la transcripción, el servidor la procesa
+  // El cliente envía la transcripción de voz en crudo; nosotros la procesamos
+  // aquí para mantener toda la lógica de negocio en el servidor.
   socket.on('voice:command', ({ transcript }) => {
     const text = transcript.toLowerCase().trim();
     console.log('[voz]', text);
@@ -128,7 +139,7 @@ io.on('connection', (socket) => {
     handleVoice(text);
   });
 
-  // Reset completo de sesión (disparado por el gesto V mantenido)
+  // Reinicio completo: vacía el pedido y vuelve a la pantalla inicial.
   socket.on('session:reset', () => {
     orderState = freshState();
     broadcast();
@@ -140,10 +151,12 @@ io.on('connection', (socket) => {
 });
 
 
+// Finaliza el pedido: genera un número, lo guarda en el historial (máximo 5),
+// notifica a todos y reinicia el estado. El broadcast final se retrasa 4 segundos
+// para que las pantallas puedan mostrar la animación de pedido completado.
 function finaliseOrder() {
   const orderNumber = Math.floor(Math.random() * 90) + 10;
 
-  // Guardamos el pedido en el historial (máximo 5 entradas)
   orderHistory.unshift({
     number:    orderNumber,
     items:     orderState.items.map(i => ({ name: i.name, emoji: i.emoji, qty: i.qty })),
@@ -159,16 +172,12 @@ function finaliseOrder() {
 }
 
 
-// Procesamiento de comandos de voz
-//
-// Toda la lógica de comandos vive aquí, en el servidor.
-// Las mutaciones se aplican directamente sobre orderState y se difunden
-// con broadcast(); no hace falta re-emitir al cliente origen.
-
+// Procesa los comandos de voz que llegan del kiosk. El orden de los bloques
+// importa: primero navegación (que no añade artículos), luego confirmación,
+// luego cancelación, luego salto a categoría y, por último, artículos concretos.
 function handleVoice(text) {
   const cats = ['burgers', 'drinks', 'sides', 'desserts'];
 
-  // "siguiente" / "anterior" — avanza o retrocede en las categorías
   if (/siguiente|next|adelante|avanzar/.test(text)) {
     const i = cats.indexOf(orderState.currentCategory);
     orderState.currentCategory = cats[(i + 1) % cats.length];
@@ -176,6 +185,7 @@ function handleVoice(text) {
     broadcast();
     return;
   }
+
   if (/anterior|atrás|atras|volver|back|previous/.test(text)) {
     const i = cats.indexOf(orderState.currentCategory);
     orderState.currentCategory = cats[(i - 1 + cats.length) % cats.length];
@@ -183,7 +193,6 @@ function handleVoice(text) {
     return;
   }
 
-  // Confirmar / pagar
   if (/confirmar|confirm|pagar|pay/.test(text)) {
     if (orderState.status === 'ordering') {
       orderState.status = 'confirming';
@@ -195,7 +204,6 @@ function handleVoice(text) {
     return;
   }
 
-  // Cancelar / borrar
   if (/cancelar|cancel|borrar|eliminar/.test(text)) {
     if (orderState.status === 'confirming') {
       orderState.status = 'ordering';
@@ -210,7 +218,9 @@ function handleVoice(text) {
     return;
   }
 
-  // Saltar a una categoría por nombre (español e inglés)
+  // Detectamos si el texto pide ir a una categoría. Si además coincide con un
+  // artículo concreto, dejamos que la sección de artículos lo maneje para no
+  // cambiar de categoría cuando el usuario solo quiere pedir algo.
   const catKeywords = {
     burgers:  /burger|hamburguesa|hamburgesa/,
     drinks:   /drink|bebida|refresco|beber|agua|cola|zumo|batido/,
@@ -219,8 +229,6 @@ function handleVoice(text) {
   };
   for (const [cat, rx] of Object.entries(catKeywords)) {
     if (rx.test(text)) {
-      // Si el texto también coincide con un artículo concreto,
-      // dejamos que la siguiente sección lo maneje en su lugar.
       const isItemCommand = itemAliases().some(({ rx: irx }) => irx.test(text));
       if (!isItemCommand) {
         orderState.currentCategory = cat;
@@ -232,7 +240,7 @@ function handleVoice(text) {
     }
   }
 
-  // Añadir un artículo por nombre
+  // Intentamos añadir un artículo por su nombre o alias de voz.
   const menu = getMenu();
   for (const { id, rx } of itemAliases()) {
     if (rx.test(text)) {
@@ -252,10 +260,12 @@ function handleVoice(text) {
     }
   }
 
-  // Si no coincide nada, el feedback visual de transcripción ya es suficiente
+  // Si la transcripción no coincide con ningún comando, el feedback visual
+  // de la barra de voz ya es suficiente para que el usuario lo sepa.
 }
 
-// Aliases de voz para cada artículo del menú
+// Tabla de aliases de voz para cada artículo del menú. Las expresiones regulares
+// aceptan variantes en español e inglés para que el reconocimiento sea más tolerante.
 function itemAliases() {
   return [
     { id: 'b1', rx: /big burger|big/i },
@@ -277,8 +287,8 @@ function itemAliases() {
 }
 
 
-// Datos del menú
-
+// Catálogo de productos. En un proyecto real esto vendría de una base de datos,
+// pero para el prototipo lo tenemos aquí directamente.
 function getMenu() {
   return [
     { id: 'b1', category: 'burgers',  name: 'Big Burger',    price: 8.99,  emoji: '🍔' },

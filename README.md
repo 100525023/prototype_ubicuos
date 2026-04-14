@@ -1,9 +1,9 @@
-# Touchless Kiosk — SIU P2
+# TouchKiosk — SIU P2
 
 **Sistemas Interactivos y Ubicuos · Grupo 9**  
 Adam Kowalczyk Holtsova · Mohamed Rida Chahdaoui Moujib · David Benito Gil
 
-Quiosco de comida rápida sin contacto táctil. Gestos por webcam (MediaPipe Hands), voz (Web Speech API) y sincronización en tiempo real entre dispositivos (Socket.IO).
+Quiosco de comida rápida sin contacto táctil. El usuario interactúa mediante gestos capturados por webcam (MediaPipe Hands) y comandos de voz (Web Speech API). El estado del pedido se sincroniza en tiempo real entre el kiosk y la pantalla de mostrador mediante Socket.IO.
 
 ## Requisitos
 
@@ -18,18 +18,18 @@ npm install
 npm start
 ```
 
-Servidor en `http://localhost:3000`
+El servidor arranca en `http://localhost:3000`.
 
 ## Pantallas
 
 | Pantalla | URL |
 |---|---|
-| Kiosk (interacción) | `http://localhost:3000/kiosk` |
-| Display (mostrador) | `http://localhost:3000/display` |
+| Kiosk (interacción del cliente) | `http://localhost:3000/kiosk` |
+| Display (pantalla de mostrador) | `http://localhost:3000/display` |
 
-Para el display en otro dispositivo, sustituye `localhost` por la IP del servidor.
+Para mostrar el display en otro dispositivo de la misma red, reemplaza `localhost` por la IP local del servidor.
 
-## Gestos
+## Gestos disponibles
 
 | Gesto | Acción |
 |---|---|
@@ -42,46 +42,51 @@ Para el display en otro dispositivo, sustituye `localhost` por la IP del servido
 | ✋ Palma abierta y mantener | Cancela el último paso |
 | ✊ Puño cerrado 2.5 s | Borra todo el pedido |
 
-Todos los gestos muestran una barra de progreso en la parte inferior de la pantalla.
+Todos los gestos muestran una barra de progreso en la parte inferior de la pantalla mientras se mantienen.
 
-## Voz
+## Control por voz
 
-Activa el micrófono con el botón de la pantalla kiosk. Comandos disponibles:
+Activa el micrófono con el botón de la pantalla kiosk. Comandos reconocidos:
 
-- Productos: "hamburguesa", "cola", "patatas", "helado"...
-- Categorías: "bebidas", "postres", "acompañamientos"
-- Navegación: "siguiente", "anterior"
-- Acción: "confirmar", "pagar", "cancelar"
+- **Productos:** "hamburguesa", "cola", "patatas", "helado"…
+- **Categorías:** "bebidas", "postres", "acompañamientos"
+- **Navegación:** "siguiente", "anterior"
+- **Acciones:** "confirmar", "pagar", "cancelar"
 
-## Funcionalidades adicionales
+## Funcionalidades destacadas
 
-- **Voz**: control completo del pedido por reconocimiento de voz en español
-- **Display en tiempo real**: pantalla secundaria con estado del pedido e historial de los últimos 5 pedidos confirmados
-- **Reset por gesto**: puño cerrado mantenido 2.5 s borra el pedido completo
+- **Control por voz** — pedido completo mediante reconocimiento de voz en español
+- **Display en tiempo real** — pantalla secundaria con el estado del pedido e historial de los últimos 5 pedidos confirmados
+- **Reset por gesto** — puño cerrado mantenido 2.5 s borra el pedido completo sin necesidad de tocar nada
 
 ## Arquitectura
 
 ```
 [Webcam / Micrófono]
-        |
-[MediaPipe / Web Speech API]
-        |
+        │
+[MediaPipe Hands / Web Speech API]
+        │
 [Socket.IO Client — Kiosk]
-        |
+        │
 [Node.js + Express + Socket.IO — :3000]
-        |
+        │
 [Socket.IO Client — Display]
 ```
 
-## Estructura
+## Estructura del proyecto
 
 ```
 touchless-kiosk/
-├── server/index.js
+├── server/
+│   └── index.js
 ├── public/
-│   ├── kiosk/index.html
-│   ├── display/index.html
-│   ├── css/shared.css
-│   └── js/kiosk.js
+│   ├── kiosk/
+│   │   └── index.html
+│   ├── display/
+│   │   └── index.html
+│   ├── css/
+│   │   └── shared.css
+│   └── js/
+│       └── kiosk.js
 └── package.json
 ```
