@@ -43,16 +43,16 @@
       <span class="status-dot"></span>
       <span id="status-text">Iniciando cámara...</span>
     </div>
-    <div class="voice-btn" id="voice-btn">
+    <div class="voice-btn" id="voice-btn" data-action="voice">
       🎙️ <span id="voice-label">Voz</span>
     </div>
   </header>
 
   <nav class="category-nav">
-    <button class="cat-btn active" data-cat="burgers">Hamburguesas</button>
-    <button class="cat-btn"        data-cat="drinks">Bebidas</button>
-    <button class="cat-btn"        data-cat="sides">Acompañamientos</button>
-    <button class="cat-btn"        data-cat="desserts">Postres</button>
+    <button class="cat-btn active" data-cat="burgers" data-pointable="cat">Hamburguesas</button>
+    <button class="cat-btn"        data-cat="drinks"   data-pointable="cat">Bebidas</button>
+    <button class="cat-btn"        data-cat="sides"    data-pointable="cat">Acompañamientos</button>
+    <button class="cat-btn"        data-cat="desserts" data-pointable="cat">Postres</button>
   </nav>
 
   <section class="flow-strip" aria-label="Pasos de uso">

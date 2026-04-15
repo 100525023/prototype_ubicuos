@@ -79,6 +79,16 @@ io.on('connection', (socket) => {
     broadcast();
   });
 
+  // El usuario salta directamente a una categoría apuntando con el dedo.
+  socket.on('gesture:set-category', (payload = {}) => {
+    const valid = ['burgers', 'drinks', 'sides', 'desserts'];
+    const cat   = typeof payload?.category === 'string' ? payload.category : '';
+    if (!valid.includes(cat)) return;
+    orderState.currentCategory = cat;
+    if (orderState.status === 'idle') orderState.status = 'browsing';
+    broadcast();
+  });
+
   // El usuario selecciona un producto. Si ya estaba en el pedido, incrementamos
   // la cantidad en lugar de duplicar la línea.
   socket.on('gesture:select', (payload = {}) => {

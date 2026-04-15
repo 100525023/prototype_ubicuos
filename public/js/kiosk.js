@@ -13,6 +13,8 @@ let presenceDetected = false;
 const GESTURE_HOLD_MS   = 700;
 const POINT_HOLD_MS     = 1300;
 const POINT_NAV_HOLD_MS = 900;
+const POINT_CAT_HOLD_MS = 900;
+const POINT_VOICE_HOLD_MS = 900;
 const RESET_HOLD_MS     = 2500;
 const NAV_HOLD_MS       = 600;
 const COOLDOWN_MS       = 1200;
@@ -469,25 +471,68 @@ function getPointTarget(lm) {
     }
   });
 
-  // Si hay ambos objetivos posibles, ganamos el más cercano al punto proyectado.
-  let target = null;
-  if (itemFound && navFound) {
-    target = itemBestScore <= navBestScore
-      ? { kind: 'item', value: itemFound }
-      : { kind: 'nav',  value: navFound };
-  } else if (itemFound) {
-    target = { kind: 'item', value: itemFound };
-  } else if (navFound) {
-    target = { kind: 'nav', value: navFound };
+  // Comprobamos si el usuario apunta a un botón de categoría de la barra de navegación.
+  let catFound     = null;
+  let catBestScore = Infinity;
+  const CAT_HIT_MARGIN = 18;
+
+  document.querySelectorAll('.cat-btn[data-pointable="cat"]').forEach(btn => {
+    const r  = btn.getBoundingClientRect();
+    const ok = screenX >= r.left - CAT_HIT_MARGIN && screenX <= r.right  + CAT_HIT_MARGIN
+            && screenY >= r.top  - CAT_HIT_MARGIN && screenY <= r.bottom + CAT_HIT_MARGIN;
+    if (ok) {
+      const cx    = r.left + r.width / 2;
+      const cy    = r.top  + r.height / 2;
+      const score = Math.hypot(screenX - cx, screenY - cy);
+      if (score < catBestScore) { catBestScore = score; catFound = btn.dataset.cat; }
+    }
+  });
+
+  // Comprobamos si el usuario apunta al botón de voz de la barra superior.
+  let voiceFound     = false;
+  let voiceBestScore = Infinity;
+  const VOICE_HIT_MARGIN = 18;
+
+  const voiceBtn = document.getElementById('voice-btn');
+  if (voiceBtn) {
+    const r  = voiceBtn.getBoundingClientRect();
+    const ok = screenX >= r.left - VOICE_HIT_MARGIN && screenX <= r.right  + VOICE_HIT_MARGIN
+            && screenY >= r.top  - VOICE_HIT_MARGIN && screenY <= r.bottom + VOICE_HIT_MARGIN;
+    if (ok) {
+      const cx    = r.left + r.width / 2;
+      const cy    = r.top  + r.height / 2;
+      voiceBestScore = Math.hypot(screenX - cx, screenY - cy);
+      voiceFound = true;
+    }
   }
 
-  // Actualizamos el estado visual de hover en tarjetas y flechas.
+  // Reunimos todos los candidatos con su score y elegimos el más cercano.
+  const candidates = [];
+  if (itemFound)  candidates.push({ kind: 'item',  value: itemFound,  score: itemBestScore });
+  if (navFound)   candidates.push({ kind: 'nav',   value: navFound,   score: navBestScore });
+  if (catFound)   candidates.push({ kind: 'cat',   value: catFound,   score: catBestScore });
+  if (voiceFound) candidates.push({ kind: 'voice', value: 'toggle',   score: voiceBestScore });
+
+  let target = null;
+  if (candidates.length > 0) {
+    candidates.sort((a, b) => a.score - b.score);
+    target = candidates[0];
+  }
+
+  // Actualizamos el estado visual de hover en tarjetas, flechas, categorías y voz.
   document.querySelectorAll('.menu-card').forEach(card => {
     card.classList.toggle('hovered', target?.kind === 'item' && card.dataset.id === target.value);
   });
   document.querySelectorAll('.arrow-btn[data-nav]').forEach(btn => {
     btn.classList.toggle('hovered', target?.kind === 'nav' && btn.dataset.nav === target.value);
   });
+  document.querySelectorAll('.cat-btn[data-pointable="cat"]').forEach(btn => {
+    btn.classList.toggle('hovered', target?.kind === 'cat' && btn.dataset.cat === target.value);
+  });
+  if (voiceBtn) {
+    voiceBtn.classList.toggle('hovered', target?.kind === 'voice');
+  }
+
   return target;
 }
 
@@ -495,6 +540,9 @@ function hidePointer() {
   if (pointerEl) pointerEl.style.display = 'none';
   document.querySelectorAll('.menu-card').forEach(c => c.classList.remove('hovered'));
   document.querySelectorAll('.arrow-btn[data-nav]').forEach(b => b.classList.remove('hovered'));
+  document.querySelectorAll('.cat-btn[data-pointable="cat"]').forEach(b => b.classList.remove('hovered'));
+  const voiceBtn = document.getElementById('voice-btn');
+  if (voiceBtn) voiceBtn.classList.remove('hovered');
 }
 
 // Dibuja el anillo de progreso en la tarjeta del producto mientras el usuario mantiene el gesto.
@@ -592,7 +640,7 @@ function onHandResults(results) {
     return;
   }
 
-  // Gesto de señalar: el usuario apunta a un producto o a una flecha.
+  // Gesto de señalar: el usuario apunta a un producto, flecha, categoría o botón de voz.
   if (gesture === 'point') {
     const target    = getPointTarget(lm);
     const targetKey = target ? (target.kind + ':' + target.value) : null;
@@ -626,10 +674,16 @@ function onHandResults(results) {
       holdStart = Date.now();
     }
 
-    const elapsed  = Date.now() - holdStart;
-    const holdMs   = target.kind === 'nav' ? POINT_NAV_HOLD_MS : POINT_HOLD_MS;
+    const elapsed = Date.now() - holdStart;
+    let holdMs;
+    if (target.kind === 'item')  holdMs = POINT_HOLD_MS;
+    if (target.kind === 'nav')   holdMs = POINT_NAV_HOLD_MS;
+    if (target.kind === 'cat')   holdMs = POINT_CAT_HOLD_MS;
+    if (target.kind === 'voice') holdMs = POINT_VOICE_HOLD_MS;
+
     const progress = Math.min(elapsed / holdMs, 1);
     setProgressBarColor('hold');
+
     if (target.kind === 'item') {
       setProgressBar(0);
       animateHoldRing(target.value, progress);
@@ -642,9 +696,15 @@ function onHandResults(results) {
       if (target.kind === 'item') {
         selectItem(target.value);
         animateCardSelect(target.value);
-      } else {
+      } else if (target.kind === 'nav') {
         sendNavigate(target.value);
         showToast(target.value === 'right' ? 'Siguiente categoría ▶' : '◀ Categoría anterior');
+      } else if (target.kind === 'cat') {
+        socket.emit('gesture:set-category', { category: target.value });
+        const labels = { burgers: 'Hamburguesas', drinks: 'Bebidas', sides: 'Acompañamientos', desserts: 'Postres' };
+        showToast(labels[target.value] || target.value);
+      } else if (target.kind === 'voice') {
+        document.getElementById('voice-btn').click();
       }
       hidePointer();
       triggerCooldown();
