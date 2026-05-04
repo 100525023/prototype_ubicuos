@@ -46,53 +46,53 @@ function up(lm, tip, pip) { return lm[tip].y < lm[pip].y; }
 function dn(lm, tip, pip) { return lm[tip].y > lm[pip].y; }
 
 function palmWidth(lm) {
-  return Math.hypot(lm[5].x - lm[17].x, lm[5].y - lm[17].y) || 0.001;
+    return Math.hypot(lm[5].x - lm[17].x, lm[5].y - lm[17].y) || 0.001;
 }
 
 function thumbSpread(lm) {
-  return Math.hypot(lm[4].x - lm[17].x, lm[4].y - lm[17].y) / palmWidth(lm);
+    return Math.hypot(lm[4].x - lm[17].x, lm[4].y - lm[17].y) / palmWidth(lm);
 }
 
 function isThumbUp(lm) {
-  if (thumbSpread(lm) < 1.5)    return false;
-  if (lm[4].y > lm[5].y - 0.04) return false;
-  if (lm[4].y > lm[9].y)        return false;
-  if (up(lm, 8,  6))             return false;
-  if (up(lm, 12, 10))            return false;
-  if (up(lm, 16, 14))            return false;
-  if (up(lm, 20, 18))            return false;
-  return true;
+    if (thumbSpread(lm) < 1.5)    return false;
+    if (lm[4].y > lm[5].y - 0.04) return false;
+    if (lm[4].y > lm[9].y)        return false;
+    if (up(lm, 8,  6))             return false;
+    if (up(lm, 12, 10))            return false;
+    if (up(lm, 16, 14))            return false;
+    if (up(lm, 20, 18))            return false;
+    return true;
 }
 
 function isOpenPalm(lm) {
-  return up(lm, 8, 6) && up(lm, 12, 10) && up(lm, 16, 14) && up(lm, 20, 18);
+    return up(lm, 8, 6) && up(lm, 12, 10) && up(lm, 16, 14) && up(lm, 20, 18);
 }
 
 // Solo el índice extendido; el resto doblados.
 function isPoint(lm) {
-  return up(lm, 8, 6) && dn(lm, 12, 10) && dn(lm, 16, 14) && dn(lm, 20, 18);
+    return up(lm, 8, 6) && dn(lm, 12, 10) && dn(lm, 16, 14) && dn(lm, 20, 18);
 }
 
 // Índice y corazón extendidos → gesto V para navegar categorías.
 function isVictory(lm) {
-  return up(lm, 8, 6) && up(lm, 12, 10) && dn(lm, 16, 14) && dn(lm, 20, 18);
+    return up(lm, 8, 6) && up(lm, 12, 10) && dn(lm, 16, 14) && dn(lm, 20, 18);
 }
 
 // Todos los dedos doblados y el pulgar recogido → reset total del pedido.
 function isFist(lm) {
-  return dn(lm, 8, 6) && dn(lm, 12, 10) && dn(lm, 16, 14) && dn(lm, 20, 18)
-      && thumbSpread(lm) < 1.1;
+    return dn(lm, 8, 6) && dn(lm, 12, 10) && dn(lm, 16, 14) && dn(lm, 20, 18)
+        && thumbSpread(lm) < 1.1;
 }
 
 // Los gestos más específicos van primero para evitar que uno más genérico
 // los "gane" cuando varios podrían encajar a la vez.
 function classifyGesture(lm) {
-  if (isThumbUp(lm))  return 'thumb_up';
-  if (isVictory(lm))  return 'victory';
-  if (isOpenPalm(lm)) return 'open_palm';
-  if (isFist(lm))     return 'fist';
-  if (isPoint(lm))    return 'point';
-  return 'other';
+    if (isThumbUp(lm))  return 'thumb_up';
+    if (isVictory(lm))  return 'victory';
+    if (isOpenPalm(lm)) return 'open_palm';
+    if (isFist(lm))     return 'fist';
+    if (isPoint(lm))    return 'point';
+    return 'other';
 }
 
 
@@ -105,33 +105,33 @@ let navHoldStart  = null;
 let navFired      = false;
 
 function handleNav(gesture, handedness) {
-  if (gesture !== 'victory') {
-    navEntryStart = null;
-    navHoldStart  = null;
-    navFired      = false;
-    return;
-  }
-  if (navFired || gestureCooldown) return;
+    if (gesture !== 'victory') {
+        navEntryStart = null;
+        navHoldStart  = null;
+        navFired      = false;
+        return;
+    }
+    if (navFired || gestureCooldown) return;
 
-  if (navEntryStart === null) { navEntryStart = Date.now(); return; }
-  if (navHoldStart === null) {
-    const entryProg = Math.min((Date.now() - navEntryStart) / ENTRY_MS, 1);
-    setProgressBarColor('entry');
-    setProgressBar(entryProg);
-    if (entryProg < 1) return;
-    navHoldStart = Date.now();
-  }
+    if (navEntryStart === null) { navEntryStart = Date.now(); return; }
+    if (navHoldStart === null) {
+        const entryProg = Math.min((Date.now() - navEntryStart) / ENTRY_MS, 1);
+        setProgressBarColor('entry');
+        setProgressBar(entryProg);
+        if (entryProg < 1) return;
+        navHoldStart = Date.now();
+    }
 
-  const prog = Math.min((Date.now() - navHoldStart) / NAV_HOLD_MS, 1);
-  setProgressBarColor('hold');
-  setProgressBar(prog);
-  if (prog >= 1) {
-    const dir = handedness === 'Left' ? 'right' : 'left';
-    socket.emit('gesture:navigate', { direction: dir });
-    showToast(dir === 'right' ? 'Siguiente categoría ▶' : '◀ Categoría anterior');
-    navFired = true;
-    triggerCooldown();
-  }
+    const prog = Math.min((Date.now() - navHoldStart) / NAV_HOLD_MS, 1);
+    setProgressBarColor('hold');
+    setProgressBar(prog);
+    if (prog >= 1) {
+        const dir = handedness === 'Left' ? 'right' : 'left';
+        socket.emit('gesture:navigate', { direction: dir });
+        showToast(dir === 'right' ? 'Siguiente categoría ▶' : '◀ Categoría anterior');
+        navFired = true;
+        triggerCooldown();
+    }
 }
 
 
@@ -159,39 +159,39 @@ let holdInterruptStart   = null;
 let pointTargetKey       = null;
 
 function updateHold(gesture, ms) {
-  if (gesture !== activeGesture) {
-    if (gesture !== holdInterruptGesture) {
-      holdInterruptGesture = gesture;
-      holdInterruptStart   = Date.now();
+    if (gesture !== activeGesture) {
+        if (gesture !== holdInterruptGesture) {
+            holdInterruptGesture = gesture;
+            holdInterruptStart   = Date.now();
+        }
+        // Dentro del margen de tolerancia ignoramos el frame anómalo.
+        if (Date.now() - holdInterruptStart < HOLD_TOLERANCE_MS) {
+            return holdStart ? Math.min((Date.now() - holdStart) / ms, 1) : 0;
+        }
+        // Fuera del margen: cambiamos de gesto y reiniciamos todo.
+        activeGesture        = gesture;
+        entryStart           = Date.now();
+        holdStart            = null;
+        holdInterruptGesture = null;
+        holdInterruptStart   = null;
+        setProgressBarColor('entry');
+        return 0;
     }
-    // Dentro del margen de tolerancia ignoramos el frame anómalo.
-    if (Date.now() - holdInterruptStart < HOLD_TOLERANCE_MS) {
-      return holdStart ? Math.min((Date.now() - holdStart) / ms, 1) : 0;
-    }
-    // Fuera del margen: cambiamos de gesto y reiniciamos todo.
-    activeGesture        = gesture;
-    entryStart           = Date.now();
-    holdStart            = null;
+
     holdInterruptGesture = null;
     holdInterruptStart   = null;
-    setProgressBarColor('entry');
-    return 0;
-  }
 
-  holdInterruptGesture = null;
-  holdInterruptStart   = null;
+    // Todavía en fase de entrada: esperamos a que pase ENTRY_MS.
+    if (holdStart === null) {
+        const entryProg = Math.min((Date.now() - entryStart) / ENTRY_MS, 1);
+        setProgressBarColor('entry');
+        setProgressBar(entryProg);
+        if (entryProg < 1) return 0;
+        holdStart = Date.now();
+    }
 
-  // Todavía en fase de entrada: esperamos a que pase ENTRY_MS.
-  if (holdStart === null) {
-    const entryProg = Math.min((Date.now() - entryStart) / ENTRY_MS, 1);
-    setProgressBarColor('entry');
-    setProgressBar(entryProg);
-    if (entryProg < 1) return 0;
-    holdStart = Date.now();
-  }
-
-  setProgressBarColor('hold');
-  return Math.min((Date.now() - holdStart) / ms, 1);
+    setProgressBarColor('hold');
+    return Math.min((Date.now() - holdStart) / ms, 1);
 }
 
 
@@ -215,118 +215,118 @@ const categoryBtns    = document.querySelectorAll('.cat-btn');
 // Eventos de Socket.IO: el servidor nos manda el estado y nosotros renderizamos.
 
 socket.on('state:sync', (state) => {
-  orderState = state;
-  renderMenu();
-  renderOrder();
-  syncCategoryUI(state.currentCategory);
-  handleStatusChange(state.status);
+    orderState = state;
+    renderMenu();
+    renderOrder();
+    syncCategoryUI(state.currentCategory);
+    handleStatusChange(state.status);
 });
 
 socket.on('ui:welcome', () => {
-  overlayIdle.classList.remove('active');
-  appEl.classList.remove('hidden');
-  showToast('Bienvenido — señala un producto para añadirlo');
+    overlayIdle.classList.remove('active');
+    appEl.classList.remove('hidden');
+    showToast('Bienvenido — señala un producto para añadirlo');
 });
 
 socket.on('ui:item-added', (item) => {
-  showToast(item.emoji + ' ' + item.name + ' añadido');
+    showToast(item.emoji + ' ' + item.name + ' añadido');
 });
 
 socket.on('ui:confirm-prompt', () => {
-  confirmModal.classList.remove('hidden');
-  modalTotal.textContent = orderState.total.toFixed(2) + ' €';
+    confirmModal.classList.remove('hidden');
+    modalTotal.textContent = orderState.total.toFixed(2) + ' €';
 });
 
 socket.on('ui:order-done', ({ orderNumber }) => {
-  confirmModal.classList.add('hidden');
-  document.getElementById('done-number').textContent = '#' + orderNumber;
-  overlayDone.classList.add('active');
-  appEl.classList.add('hidden');
-  // Volvemos a la pantalla de bienvenida después de mostrar el número unos segundos.
-  setTimeout(() => {
-    overlayDone.classList.remove('active');
-    overlayIdle.classList.add('active');
-    presenceDetected = false;
-  }, 5000);
+    confirmModal.classList.add('hidden');
+    document.getElementById('done-number').textContent = '#' + orderNumber;
+    overlayDone.classList.add('active');
+    appEl.classList.add('hidden');
+    // Volvemos a la pantalla de bienvenida después de mostrar el número unos segundos.
+    setTimeout(() => {
+        overlayDone.classList.remove('active');
+        overlayIdle.classList.add('active');
+        presenceDetected = false;
+    }, 5000);
 });
 
 socket.on('ui:voice-feedback', ({ transcript }) => {
-  voiceTranscript.textContent = transcript;
-  voiceBar.classList.remove('hidden');
-  setTimeout(() => voiceBar.classList.add('hidden'), 3000);
+    voiceTranscript.textContent = transcript;
+    voiceBar.classList.remove('hidden');
+    setTimeout(() => voiceBar.classList.add('hidden'), 3000);
 });
 
 
 // Renderizado de la cuadrícula de productos según la categoría activa.
 function renderMenu() {
-  const cat   = orderState.currentCategory || 'burgers';
-  const items = menuData.filter(i => i.category === cat);
-  menuGrid.innerHTML = '';
-  items.forEach(item => {
-    const card = document.createElement('div');
-    card.className  = 'menu-card';
-    card.dataset.id = item.id;
-    card.innerHTML =
-      '<div class="item-emoji">' + item.emoji + '</div>' +
-      '<div class="item-name">'  + item.name  + '</div>' +
-      '<div class="item-price">' + item.price.toFixed(2) + ' €</div>' +
-      '<div class="hold-ring" id="ring-' + item.id + '"></div>';
-    card.addEventListener('click', () => selectItem(item.id));
-    menuGrid.appendChild(card);
-  });
+    const cat   = orderState.currentCategory || 'burgers';
+    const items = menuData.filter(i => i.category === cat);
+    menuGrid.innerHTML = '';
+    items.forEach(item => {
+        const card = document.createElement('div');
+        card.className  = 'menu-card';
+        card.dataset.id = item.id;
+        card.innerHTML =
+            '<div class="item-emoji">' + item.emoji + '</div>' +
+                '<div class="item-name">'  + item.name  + '</div>' +
+                '<div class="item-price">' + item.price.toFixed(2) + ' €</div>' +
+                '<div class="hold-ring" id="ring-' + item.id + '"></div>';
+        card.addEventListener('click', () => selectItem(item.id));
+        menuGrid.appendChild(card);
+    });
 }
 
 // Renderiza el panel lateral del pedido. Si está vacío muestra un mensaje
 // y resetea el total; si no, construye una fila por artículo.
 function renderOrder() {
-  if (!orderState.items || orderState.items.length === 0) {
-    orderItemsEl.innerHTML = '<p class="empty-msg">Sin artículos todavía</p>';
-    totalPriceEl.textContent = '0.00 €';
-    return;
-  }
-  orderItemsEl.innerHTML = '';
-  orderState.items.forEach(item => {
-    const row = document.createElement('div');
-    row.className = 'order-row';
-    row.innerHTML =
-      '<span class="row-emoji">'  + item.emoji + '</span>' +
-      '<span class="row-name">'   + item.name  + '</span>' +
-      '<span class="row-qty">x'   + item.qty   + '</span>' +
-      '<span class="row-price">'  + (item.price * item.qty).toFixed(2) + ' €</span>' +
-      '<button class="row-remove" onclick="removeItem(\'' + item.id + '\')">×</button>';
-    orderItemsEl.appendChild(row);
-  });
-  // Animamos el total con un pequeño bump cuando cambia de valor.
-  const newTotal = orderState.total.toFixed(2) + ' €';
-  if (totalPriceEl.textContent !== newTotal) {
-    totalPriceEl.textContent = newTotal;
-    totalPriceEl.classList.remove('bump');
-    void totalPriceEl.offsetWidth;
-    totalPriceEl.classList.add('bump');
-  }
+    if (!orderState.items || orderState.items.length === 0) {
+        orderItemsEl.innerHTML = '<p class="empty-msg">Sin artículos todavía</p>';
+        totalPriceEl.textContent = '0.00 €';
+        return;
+    }
+    orderItemsEl.innerHTML = '';
+    orderState.items.forEach(item => {
+        const row = document.createElement('div');
+        row.className = 'order-row';
+        row.innerHTML =
+            '<span class="row-emoji">'  + item.emoji + '</span>' +
+                '<span class="row-name">'   + item.name  + '</span>' +
+                '<span class="row-qty">x'   + item.qty   + '</span>' +
+                '<span class="row-price">'  + (item.price * item.qty).toFixed(2) + ' €</span>' +
+                '<button class="row-remove" onclick="removeItem(\'' + item.id + '\')">×</button>';
+        orderItemsEl.appendChild(row);
+    });
+    // Animamos el total con un pequeño bump cuando cambia de valor.
+    const newTotal = orderState.total.toFixed(2) + ' €';
+    if (totalPriceEl.textContent !== newTotal) {
+        totalPriceEl.textContent = newTotal;
+        totalPriceEl.classList.remove('bump');
+        void totalPriceEl.offsetWidth;
+        totalPriceEl.classList.add('bump');
+    }
 }
 
 function syncCategoryUI(cat) {
-  categoryBtns.forEach(btn => btn.classList.toggle('active', btn.dataset.cat === cat));
+    categoryBtns.forEach(btn => btn.classList.toggle('active', btn.dataset.cat === cat));
 }
 
 function handleStatusChange(status) {
-  const isIdle = status === 'idle';
+    const isIdle = status === 'idle';
 
-  overlayIdle.classList.toggle('active', isIdle);
-  appEl.classList.toggle('hidden', isIdle);
+    overlayIdle.classList.toggle('active', isIdle);
+    appEl.classList.toggle('hidden', isIdle);
 
-  if (isIdle) {
-    overlayDone.classList.remove('active');
-    presenceDetected = false;
-  }
+    if (isIdle) {
+        overlayDone.classList.remove('active');
+        presenceDetected = false;
+    }
 
-  if (status === 'confirming') {
-    confirmModal.classList.remove('hidden');
-    modalTotal.textContent = orderState.total.toFixed(2) + ' €';
-  } else {
-    confirmModal.classList.add('hidden');
-  }
+    if (status === 'confirming') {
+        confirmModal.classList.remove('hidden');
+        modalTotal.textContent = orderState.total.toFixed(2) + ' €';
+    } else {
+        confirmModal.classList.add('hidden');
+    }
 }
 
 
@@ -339,27 +339,27 @@ function removeItem(id)    { socket.emit('order:remove-item', { itemId: id }); }
 
 let toastTimer;
 function showToast(msg) {
-  toast.textContent = msg;
-  toast.classList.remove('hidden');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => toast.classList.add('hidden'), 2500);
+    toast.textContent = msg;
+    toast.classList.remove('hidden');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.add('hidden'), 2500);
 }
 
 // Después de disparar una acción bloqueamos nuevos gestos durante COOLDOWN_MS
 // para evitar dobles disparos y resetear todo el estado de temporización.
 function triggerCooldown() {
-  gestureCooldown      = true;
-  activeGesture        = null;
-  entryStart           = null;
-  holdStart            = null;
-  holdInterruptGesture = null;
-  holdInterruptStart   = null;
-  pointTargetKey       = null;
-  setTimeout(() => { gestureCooldown = false; }, COOLDOWN_MS);
+    gestureCooldown      = true;
+    activeGesture        = null;
+    entryStart           = null;
+    holdStart            = null;
+    holdInterruptGesture = null;
+    holdInterruptStart   = null;
+    pointTargetKey       = null;
+    setTimeout(() => { gestureCooldown = false; }, COOLDOWN_MS);
 }
 
 function clearAllHoldRings() {
-  document.querySelectorAll('.hold-ring').forEach(r => r.style.display = 'none');
+    document.querySelectorAll('.hold-ring').forEach(r => r.style.display = 'none');
 }
 
 
@@ -371,32 +371,32 @@ let pointerEl   = null;
 let progressBar = null;
 
 function getOrCreatePointer() {
-  if (!pointerEl) {
-    pointerEl = document.createElement('div');
-    pointerEl.style.cssText =
-      'position:fixed;width:20px;height:20px;border-radius:50%;' +
-      'background:rgba(0,0,0,0.10);border:2px solid #111;' +
-      'pointer-events:none;z-index:999;transform:translate(-50%,-50%);display:none;';
-    document.body.appendChild(pointerEl);
-  }
-  return pointerEl;
+    if (!pointerEl) {
+        pointerEl = document.createElement('div');
+        pointerEl.style.cssText =
+            'position:fixed;width:20px;height:20px;border-radius:50%;' +
+                'background:rgba(0,0,0,0.10);border:2px solid #111;' +
+                'pointer-events:none;z-index:999;transform:translate(-50%,-50%);display:none;';
+        document.body.appendChild(pointerEl);
+    }
+    return pointerEl;
 }
 
 function setProgressBar(pct) {
-  if (!progressBar) {
-    progressBar = document.createElement('div');
-    progressBar.style.cssText =
-      'position:fixed;bottom:0;left:0;height:4px;background:#111;' +
-      'z-index:998;pointer-events:none;width:0;transition:width 0.06s linear;';
-    document.body.appendChild(progressBar);
-  }
-  progressBar.style.width = (pct * 100) + '%';
+    if (!progressBar) {
+        progressBar = document.createElement('div');
+        progressBar.style.cssText =
+            'position:fixed;bottom:0;left:0;height:4px;background:#111;' +
+                'z-index:998;pointer-events:none;width:0;transition:width 0.06s linear;';
+        document.body.appendChild(progressBar);
+    }
+    progressBar.style.width = (pct * 100) + '%';
 }
 
 // Gris durante la fase de entrada, rojo de marca durante la fase de hold.
 function setProgressBarColor(phase) {
-  if (!progressBar) return;
-  progressBar.style.background = phase === 'entry' ? '#bbb' : 'var(--brand, #c94a1a)';
+    if (!progressBar) return;
+    progressBar.style.background = phase === 'entry' ? '#bbb' : 'var(--brand, #c94a1a)';
 }
 
 // Calcula hacia dónde apunta el dedo proyectando la dirección lm[5]→lm[8]
@@ -405,164 +405,164 @@ function setProgressBarColor(phase) {
 // También aplica un remapeo para compensar que las esquinas de la cámara
 // no se mapean de forma lineal al espacio de pantalla.
 function getPointTarget(lm) {
-  const MAP_X_GAIN   = 1.10;
-  const MAP_Y_GAIN   = 1.45;
-  const MAP_X_OFFSET = 0.00;
-  const MAP_Y_OFFSET = -0.03;
+    const MAP_X_GAIN   = 1.10;
+    const MAP_Y_GAIN   = 1.45;
+    const MAP_X_OFFSET = 0.00;
+    const MAP_Y_OFFSET = -0.03;
 
-  function remapNorm(v, gain, offset) {
-    const mapped = ((v - 0.5) * gain) + 0.5 + offset;
-    return Math.max(0, Math.min(1, mapped));
-  }
+    function remapNorm(v, gain, offset) {
+        const mapped = ((v - 0.5) * gain) + 0.5 + offset;
+        return Math.max(0, Math.min(1, mapped));
+    }
 
-  const dx    = lm[8].x - lm[5].x;
-  const dy    = lm[8].y - lm[5].y;
-  const projX = lm[8].x + dx * 0.4;
-  const projY = lm[8].y + dy * 0.4;
+    const dx    = lm[8].x - lm[5].x;
+    const dy    = lm[8].y - lm[5].y;
+    const projX = lm[8].x + dx * 0.4;
+    const projY = lm[8].y + dy * 0.4;
 
-  const projXMapped = remapNorm(projX,   MAP_X_GAIN, MAP_X_OFFSET);
-  const projYMapped = remapNorm(projY,   MAP_Y_GAIN, MAP_Y_OFFSET);
-  const tipXMapped  = remapNorm(lm[8].x, MAP_X_GAIN, MAP_X_OFFSET);
-  const tipYMapped  = remapNorm(lm[8].y, MAP_Y_GAIN, MAP_Y_OFFSET);
+    const projXMapped = remapNorm(projX,   MAP_X_GAIN, MAP_X_OFFSET);
+    const projYMapped = remapNorm(projY,   MAP_Y_GAIN, MAP_Y_OFFSET);
+    const tipXMapped  = remapNorm(lm[8].x, MAP_X_GAIN, MAP_X_OFFSET);
+    const tipYMapped  = remapNorm(lm[8].y, MAP_Y_GAIN, MAP_Y_OFFSET);
 
-  // La cámara está espejada, así que invertimos el eje X al proyectar al viewport.
-  const screenX    = (1 - projXMapped) * window.innerWidth;
-  const screenY    = projYMapped * window.innerHeight;
-  const tipScreenX = (1 - tipXMapped) * window.innerWidth;
-  const tipScreenY = tipYMapped * window.innerHeight;
+    // La cámara está espejada, así que invertimos el eje X al proyectar al viewport.
+    const screenX    = (1 - projXMapped) * window.innerWidth;
+    const screenY    = projYMapped * window.innerHeight;
+    const tipScreenX = (1 - tipXMapped) * window.innerWidth;
+    const tipScreenY = tipYMapped * window.innerHeight;
 
-  const ptr = getOrCreatePointer();
-  ptr.style.display = 'block';
-  ptr.style.left    = tipScreenX + 'px';
-  ptr.style.top     = tipScreenY + 'px';
+    const ptr = getOrCreatePointer();
+    ptr.style.display = 'block';
+    ptr.style.left    = tipScreenX + 'px';
+    ptr.style.top     = tipScreenY + 'px';
 
-  // Buscamos el producto más cercano al punto proyectado dentro de un margen.
-  let itemFound     = null;
-  let itemBestScore = Infinity;
-  const ITEM_HIT_MARGIN = 28;
+    // Buscamos el producto más cercano al punto proyectado dentro de un margen.
+    let itemFound     = null;
+    let itemBestScore = Infinity;
+    const ITEM_HIT_MARGIN = 28;
 
-  document.querySelectorAll('.menu-card').forEach(card => {
-    const r  = card.getBoundingClientRect();
-    const ok = screenX >= r.left - ITEM_HIT_MARGIN && screenX <= r.right  + ITEM_HIT_MARGIN
+    document.querySelectorAll('.menu-card').forEach(card => {
+        const r  = card.getBoundingClientRect();
+        const ok = screenX >= r.left - ITEM_HIT_MARGIN && screenX <= r.right  + ITEM_HIT_MARGIN
             && screenY >= r.top  - ITEM_HIT_MARGIN && screenY <= r.bottom + ITEM_HIT_MARGIN;
-    if (ok) {
-      const cx    = r.left + r.width / 2;
-      const cy    = r.top  + r.height / 2;
-      const score = Math.hypot(screenX - cx, screenY - cy);
-      if (score < itemBestScore) { itemBestScore = score; itemFound = card.dataset.id; }
-    }
-  });
+        if (ok) {
+            const cx    = r.left + r.width / 2;
+            const cy    = r.top  + r.height / 2;
+            const score = Math.hypot(screenX - cx, screenY - cy);
+            if (score < itemBestScore) { itemBestScore = score; itemFound = card.dataset.id; }
+        }
+    });
 
-  // También comprobamos si el usuario apunta a las flechas de navegación.
-  let navFound     = null;
-  let navBestScore = Infinity;
-  const NAV_HIT_MARGIN_X = 34;
-  const NAV_HIT_MARGIN_Y = 90;
+    // También comprobamos si el usuario apunta a las flechas de navegación.
+    let navFound     = null;
+    let navBestScore = Infinity;
+    const NAV_HIT_MARGIN_X = 34;
+    const NAV_HIT_MARGIN_Y = 90;
 
-  document.querySelectorAll('.arrow-btn[data-nav]').forEach(btn => {
-    const r  = btn.getBoundingClientRect();
-    const ok = screenX >= r.left - NAV_HIT_MARGIN_X && screenX <= r.right  + NAV_HIT_MARGIN_X
+    document.querySelectorAll('.arrow-btn[data-nav]').forEach(btn => {
+        const r  = btn.getBoundingClientRect();
+        const ok = screenX >= r.left - NAV_HIT_MARGIN_X && screenX <= r.right  + NAV_HIT_MARGIN_X
             && screenY >= r.top  - NAV_HIT_MARGIN_Y && screenY <= r.bottom + NAV_HIT_MARGIN_Y;
-    if (ok) {
-      const cx    = r.left + r.width / 2;
-      const cy    = r.top  + r.height / 2;
-      const score = Math.hypot(screenX - cx, screenY - cy);
-      if (score < navBestScore) { navBestScore = score; navFound = btn.dataset.nav; }
-    }
-  });
+        if (ok) {
+            const cx    = r.left + r.width / 2;
+            const cy    = r.top  + r.height / 2;
+            const score = Math.hypot(screenX - cx, screenY - cy);
+            if (score < navBestScore) { navBestScore = score; navFound = btn.dataset.nav; }
+        }
+    });
 
-  // Comprobamos si el usuario apunta a un botón de categoría de la barra de navegación.
-  let catFound     = null;
-  let catBestScore = Infinity;
-  const CAT_HIT_MARGIN = 18;
+    // Comprobamos si el usuario apunta a un botón de categoría de la barra de navegación.
+    let catFound     = null;
+    let catBestScore = Infinity;
+    const CAT_HIT_MARGIN = 18;
 
-  document.querySelectorAll('.cat-btn[data-pointable="cat"]').forEach(btn => {
-    const r  = btn.getBoundingClientRect();
-    const ok = screenX >= r.left - CAT_HIT_MARGIN && screenX <= r.right  + CAT_HIT_MARGIN
+    document.querySelectorAll('.cat-btn[data-pointable="cat"]').forEach(btn => {
+        const r  = btn.getBoundingClientRect();
+        const ok = screenX >= r.left - CAT_HIT_MARGIN && screenX <= r.right  + CAT_HIT_MARGIN
             && screenY >= r.top  - CAT_HIT_MARGIN && screenY <= r.bottom + CAT_HIT_MARGIN;
-    if (ok) {
-      const cx    = r.left + r.width / 2;
-      const cy    = r.top  + r.height / 2;
-      const score = Math.hypot(screenX - cx, screenY - cy);
-      if (score < catBestScore) { catBestScore = score; catFound = btn.dataset.cat; }
-    }
-  });
+        if (ok) {
+            const cx    = r.left + r.width / 2;
+            const cy    = r.top  + r.height / 2;
+            const score = Math.hypot(screenX - cx, screenY - cy);
+            if (score < catBestScore) { catBestScore = score; catFound = btn.dataset.cat; }
+        }
+    });
 
-  // Comprobamos si el usuario apunta al botón de voz de la barra superior.
-  let voiceFound     = false;
-  let voiceBestScore = Infinity;
-  const VOICE_HIT_MARGIN = 18;
+    // Comprobamos si el usuario apunta al botón de voz de la barra superior.
+    let voiceFound     = false;
+    let voiceBestScore = Infinity;
+    const VOICE_HIT_MARGIN = 18;
 
-  const voiceBtn = document.getElementById('voice-btn');
-  if (voiceBtn) {
-    const r  = voiceBtn.getBoundingClientRect();
-    const ok = screenX >= r.left - VOICE_HIT_MARGIN && screenX <= r.right  + VOICE_HIT_MARGIN
+    const voiceBtn = document.getElementById('voice-btn');
+    if (voiceBtn) {
+        const r  = voiceBtn.getBoundingClientRect();
+        const ok = screenX >= r.left - VOICE_HIT_MARGIN && screenX <= r.right  + VOICE_HIT_MARGIN
             && screenY >= r.top  - VOICE_HIT_MARGIN && screenY <= r.bottom + VOICE_HIT_MARGIN;
-    if (ok) {
-      const cx    = r.left + r.width / 2;
-      const cy    = r.top  + r.height / 2;
-      voiceBestScore = Math.hypot(screenX - cx, screenY - cy);
-      voiceFound = true;
+        if (ok) {
+            const cx    = r.left + r.width / 2;
+            const cy    = r.top  + r.height / 2;
+            voiceBestScore = Math.hypot(screenX - cx, screenY - cy);
+            voiceFound = true;
+        }
     }
-  }
 
-  // Reunimos todos los candidatos con su score y elegimos el más cercano.
-  const candidates = [];
-  if (itemFound)  candidates.push({ kind: 'item',  value: itemFound,  score: itemBestScore });
-  if (navFound)   candidates.push({ kind: 'nav',   value: navFound,   score: navBestScore });
-  if (catFound)   candidates.push({ kind: 'cat',   value: catFound,   score: catBestScore });
-  if (voiceFound) candidates.push({ kind: 'voice', value: 'toggle',   score: voiceBestScore });
+    // Reunimos todos los candidatos con su score y elegimos el más cercano.
+    const candidates = [];
+    if (itemFound)  candidates.push({ kind: 'item',  value: itemFound,  score: itemBestScore });
+    if (navFound)   candidates.push({ kind: 'nav',   value: navFound,   score: navBestScore });
+    if (catFound)   candidates.push({ kind: 'cat',   value: catFound,   score: catBestScore });
+    if (voiceFound) candidates.push({ kind: 'voice', value: 'toggle',   score: voiceBestScore });
 
-  let target = null;
-  if (candidates.length > 0) {
-    candidates.sort((a, b) => a.score - b.score);
-    target = candidates[0];
-  }
+    let target = null;
+    if (candidates.length > 0) {
+        candidates.sort((a, b) => a.score - b.score);
+        target = candidates[0];
+    }
 
-  // Actualizamos el estado visual de hover en tarjetas, flechas, categorías y voz.
-  document.querySelectorAll('.menu-card').forEach(card => {
-    card.classList.toggle('hovered', target?.kind === 'item' && card.dataset.id === target.value);
-  });
-  document.querySelectorAll('.arrow-btn[data-nav]').forEach(btn => {
-    btn.classList.toggle('hovered', target?.kind === 'nav' && btn.dataset.nav === target.value);
-  });
-  document.querySelectorAll('.cat-btn[data-pointable="cat"]').forEach(btn => {
-    btn.classList.toggle('hovered', target?.kind === 'cat' && btn.dataset.cat === target.value);
-  });
-  if (voiceBtn) {
-    voiceBtn.classList.toggle('hovered', target?.kind === 'voice');
-  }
+    // Actualizamos el estado visual de hover en tarjetas, flechas, categorías y voz.
+    document.querySelectorAll('.menu-card').forEach(card => {
+        card.classList.toggle('hovered', target?.kind === 'item' && card.dataset.id === target.value);
+    });
+    document.querySelectorAll('.arrow-btn[data-nav]').forEach(btn => {
+        btn.classList.toggle('hovered', target?.kind === 'nav' && btn.dataset.nav === target.value);
+    });
+    document.querySelectorAll('.cat-btn[data-pointable="cat"]').forEach(btn => {
+        btn.classList.toggle('hovered', target?.kind === 'cat' && btn.dataset.cat === target.value);
+    });
+    if (voiceBtn) {
+        voiceBtn.classList.toggle('hovered', target?.kind === 'voice');
+    }
 
-  return target;
+    return target;
 }
 
 function hidePointer() {
-  if (pointerEl) pointerEl.style.display = 'none';
-  document.querySelectorAll('.menu-card').forEach(c => c.classList.remove('hovered'));
-  document.querySelectorAll('.arrow-btn[data-nav]').forEach(b => b.classList.remove('hovered'));
-  document.querySelectorAll('.cat-btn[data-pointable="cat"]').forEach(b => b.classList.remove('hovered'));
-  const voiceBtn = document.getElementById('voice-btn');
-  if (voiceBtn) voiceBtn.classList.remove('hovered');
+    if (pointerEl) pointerEl.style.display = 'none';
+    document.querySelectorAll('.menu-card').forEach(c => c.classList.remove('hovered'));
+    document.querySelectorAll('.arrow-btn[data-nav]').forEach(b => b.classList.remove('hovered'));
+    document.querySelectorAll('.cat-btn[data-pointable="cat"]').forEach(b => b.classList.remove('hovered'));
+    const voiceBtn = document.getElementById('voice-btn');
+    if (voiceBtn) voiceBtn.classList.remove('hovered');
 }
 
 // Dibuja el anillo de progreso en la tarjeta del producto mientras el usuario mantiene el gesto.
 function animateHoldRing(id, progress) {
-  const ring = document.getElementById('ring-' + id);
-  if (!ring) return;
-  const pct = Math.max(0, Math.min(progress, 1)) * 100;
-  ring.style.display = 'block';
-  ring.style.setProperty('--hold-progress', pct.toFixed(1) + '%');
+    const ring = document.getElementById('ring-' + id);
+    if (!ring) return;
+    const pct = Math.max(0, Math.min(progress, 1)) * 100;
+    ring.style.display = 'block';
+    ring.style.setProperty('--hold-progress', pct.toFixed(1) + '%');
 }
 
 // Flash de confirmación cuando el artículo se añade al pedido.
 function animateCardSelect(id) {
-  const card = document.querySelector('.menu-card[data-id="' + id + '"]');
-  if (card) {
-    card.classList.add('selected-flash');
-    setTimeout(() => card.classList.remove('selected-flash'), 600);
-  }
-  const ring = document.getElementById('ring-' + id);
-  if (ring) ring.style.display = 'none';
+    const card = document.querySelector('.menu-card[data-id="' + id + '"]');
+    if (card) {
+        card.classList.add('selected-flash');
+        setTimeout(() => card.classList.remove('selected-flash'), 600);
+    }
+    const ring = document.getElementById('ring-' + id);
+    if (ring) ring.style.display = 'none';
 }
 
 
@@ -574,193 +574,193 @@ const canvasEl  = document.getElementById('gesture-canvas');
 const canvasCtx = canvasEl.getContext('2d');
 
 async function initMediaPipe() {
-  hands = new Hands({
-    locateFile: file => 'https://cdn.jsdelivr.net/npm/@mediapipe/hands/' + file,
-  });
-  hands.setOptions({
-    maxNumHands:            1,
-    modelComplexity:        1,
-    minDetectionConfidence: 0.7,
-    minTrackingConfidence:  0.55,
-  });
-  hands.onResults(onHandResults);
-  const camera = new Camera(videoEl, {
-    onFrame: async () => { await hands.send({ image: videoEl }); },
-    width: 320, height: 240,
-  });
-  camera.start();
-  statusText.textContent = 'Cámara activa';
+    hands = new Hands({
+        locateFile: file => 'https://cdn.jsdelivr.net/npm/@mediapipe/hands/' + file,
+    });
+    hands.setOptions({
+        maxNumHands:            1,
+        modelComplexity:        1,
+        minDetectionConfidence: 0.7,
+        minTrackingConfidence:  0.55,
+    });
+    hands.onResults(onHandResults);
+    const camera = new Camera(videoEl, {
+        onFrame: async () => { await hands.send({ image: videoEl }); },
+        width: 320, height: 240,
+    });
+    camera.start();
+    statusText.textContent = 'Cámara activa';
 }
 
 // Recibe los resultados de MediaPipe frame a frame y aplica la lógica de gestos.
 function onHandResults(results) {
-  canvasEl.width  = videoEl.videoWidth  || 320;
-  canvasEl.height = videoEl.videoHeight || 240;
-  canvasCtx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+    canvasEl.width  = videoEl.videoWidth  || 320;
+    canvasEl.height = videoEl.videoHeight || 240;
+    canvasCtx.clearRect(0, 0, canvasEl.width, canvasEl.height);
 
-  if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
-    // Sin mano en cámara: reseteamos todo el estado de temporización.
-    gestureLabel.textContent = '—';
-    activeGesture        = null;
-    entryStart           = null;
-    holdStart            = null;
-    holdInterruptGesture = null;
-    holdInterruptStart   = null;
-    pointTargetKey       = null;
-    navEntryStart = null;
-    navHoldStart  = null;
-    navFired      = false;
-    clearAllHoldRings();
+    if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
+        // Sin mano en cámara: reseteamos todo el estado de temporización.
+        gestureLabel.textContent = '—';
+        activeGesture        = null;
+        entryStart           = null;
+        holdStart            = null;
+        holdInterruptGesture = null;
+        holdInterruptStart   = null;
+        pointTargetKey       = null;
+        navEntryStart = null;
+        navHoldStart  = null;
+        navFired      = false;
+        clearAllHoldRings();
+        hidePointer();
+        setProgressBar(0);
+        return;
+    }
+
+    const lm         = results.multiHandLandmarks[0];
+    const handedness = results.multiHandedness?.[0]?.label ?? 'Right';
+    const gesture    = classifyGesture(lm);
+
+    drawConnectors(canvasCtx, lm, HAND_CONNECTIONS, { color: '#bbb', lineWidth: 1.5 });
+    drawLandmarks(canvasCtx, lm, { color: '#444', lineWidth: 1, radius: 2 });
+
+    // Arrancamos la sesión en cuanto detectamos una palma abierta por primera vez.
+    if (!presenceDetected && gesture === 'open_palm') {
+        presenceDetected = true;
+        socket.emit('gesture:presence');
+    }
+
+    gestureLabel.textContent = gesture === 'other' ? '—' : gesture;
+
+    // La navegación V se gestiona aparte porque puede coexistir con otros gestos.
+    handleNav(gesture, handedness);
+
+    if (gestureCooldown) {
+        if (gesture !== 'point') hidePointer();
+        setProgressBar(0);
+        return;
+    }
+
+    // Gesto de señalar: el usuario apunta a un producto, flecha, categoría o botón de voz.
+    if (gesture === 'point') {
+        const target    = getPointTarget(lm);
+        const targetKey = target ? (target.kind + ':' + target.value) : null;
+
+        if (!target) {
+            activeGesture  = 'point';
+            pointTargetKey = null;
+            entryStart     = Date.now();
+            holdStart      = null;
+            clearAllHoldRings();
+            setProgressBarColor('entry');
+            setProgressBar(0);
+            return;
+        }
+
+        // Si el usuario cambia de objetivo reiniciamos el hold para evitar
+        // que seleccione el producto incorrecto por inercia.
+        if (activeGesture !== 'point' || pointTargetKey !== targetKey) {
+            activeGesture  = 'point';
+            pointTargetKey = targetKey;
+            entryStart     = Date.now();
+            holdStart      = null;
+            clearAllHoldRings();
+        }
+
+        if (holdStart === null) {
+            const entryProg = Math.min((Date.now() - entryStart) / ENTRY_MS, 1);
+            setProgressBarColor('entry');
+            setProgressBar(entryProg);
+            if (entryProg < 1) return;
+            holdStart = Date.now();
+        }
+
+        const elapsed = Date.now() - holdStart;
+        let holdMs;
+        if (target.kind === 'item')  holdMs = POINT_HOLD_MS;
+        if (target.kind === 'nav')   holdMs = POINT_NAV_HOLD_MS;
+        if (target.kind === 'cat')   holdMs = POINT_CAT_HOLD_MS;
+        if (target.kind === 'voice') holdMs = POINT_VOICE_HOLD_MS;
+
+        const progress = Math.min(elapsed / holdMs, 1);
+        setProgressBarColor('hold');
+
+        if (target.kind === 'item') {
+            setProgressBar(0);
+            animateHoldRing(target.value, progress);
+        } else {
+            clearAllHoldRings();
+            setProgressBar(progress);
+        }
+
+        if (elapsed >= holdMs) {
+            if (target.kind === 'item') {
+                selectItem(target.value);
+                animateCardSelect(target.value);
+            } else if (target.kind === 'nav') {
+                sendNavigate(target.value);
+                showToast(target.value === 'right' ? 'Siguiente categoría ▶' : '◀ Categoría anterior');
+            } else if (target.kind === 'cat') {
+                socket.emit('gesture:set-category', { category: target.value });
+                const labels = { burgers: 'Hamburguesas', drinks: 'Bebidas', sides: 'Acompañamientos', desserts: 'Postres' };
+                showToast(labels[target.value] || target.value);
+            } else if (target.kind === 'voice') {
+                document.getElementById('voice-btn').click();
+            }
+            hidePointer();
+            triggerCooldown();
+        }
+        return;
+    }
+
+    if (activeGesture === 'point') {
+        pointTargetKey = null;
+        clearAllHoldRings();
+        hidePointer();
+    }
+
+    // Pulgar arriba → confirma o pasa al modal de pago.
+    if (gesture === 'thumb_up') {
+        const prog = updateHold('thumb_up', GESTURE_HOLD_MS);
+        setProgressBar(prog);
+        if (prog >= 1) {
+            sendConfirm();
+            showToast('Confirmado 👍');
+            triggerCooldown();
+        }
+        return;
+    }
+
+    // Palma abierta → cancela el último paso.
+    if (gesture === 'open_palm') {
+        const prog = updateHold('open_palm', GESTURE_HOLD_MS);
+        setProgressBar(prog);
+        if (prog >= 1) {
+            sendCancel();
+            showToast('Cancelado');
+            triggerCooldown();
+        }
+        return;
+    }
+
+    // Puño mantenido más tiempo → borra todo el pedido y empieza de cero.
+    if (gesture === 'fist') {
+        const prog = updateHold('fist', RESET_HOLD_MS);
+        setProgressBar(prog);
+        gestureLabel.textContent = 'reset ' + Math.round(prog * 100) + '%';
+        if (prog >= 1) {
+            socket.emit('session:reset');
+            showToast('Pedido eliminado');
+            triggerCooldown();
+        }
+        return;
+    }
+
+    if (gesture !== 'victory') {
+        activeGesture = null;
+        holdStart     = null;
+        setProgressBar(0);
+    }
     hidePointer();
-    setProgressBar(0);
-    return;
-  }
-
-  const lm         = results.multiHandLandmarks[0];
-  const handedness = results.multiHandedness?.[0]?.label ?? 'Right';
-  const gesture    = classifyGesture(lm);
-
-  drawConnectors(canvasCtx, lm, HAND_CONNECTIONS, { color: '#bbb', lineWidth: 1.5 });
-  drawLandmarks(canvasCtx, lm, { color: '#444', lineWidth: 1, radius: 2 });
-
-  // Arrancamos la sesión en cuanto detectamos una palma abierta por primera vez.
-  if (!presenceDetected && gesture === 'open_palm') {
-    presenceDetected = true;
-    socket.emit('gesture:presence');
-  }
-
-  gestureLabel.textContent = gesture === 'other' ? '—' : gesture;
-
-  // La navegación V se gestiona aparte porque puede coexistir con otros gestos.
-  handleNav(gesture, handedness);
-
-  if (gestureCooldown) {
-    if (gesture !== 'point') hidePointer();
-    setProgressBar(0);
-    return;
-  }
-
-  // Gesto de señalar: el usuario apunta a un producto, flecha, categoría o botón de voz.
-  if (gesture === 'point') {
-    const target    = getPointTarget(lm);
-    const targetKey = target ? (target.kind + ':' + target.value) : null;
-
-    if (!target) {
-      activeGesture  = 'point';
-      pointTargetKey = null;
-      entryStart     = Date.now();
-      holdStart      = null;
-      clearAllHoldRings();
-      setProgressBarColor('entry');
-      setProgressBar(0);
-      return;
-    }
-
-    // Si el usuario cambia de objetivo reiniciamos el hold para evitar
-    // que seleccione el producto incorrecto por inercia.
-    if (activeGesture !== 'point' || pointTargetKey !== targetKey) {
-      activeGesture  = 'point';
-      pointTargetKey = targetKey;
-      entryStart     = Date.now();
-      holdStart      = null;
-      clearAllHoldRings();
-    }
-
-    if (holdStart === null) {
-      const entryProg = Math.min((Date.now() - entryStart) / ENTRY_MS, 1);
-      setProgressBarColor('entry');
-      setProgressBar(entryProg);
-      if (entryProg < 1) return;
-      holdStart = Date.now();
-    }
-
-    const elapsed = Date.now() - holdStart;
-    let holdMs;
-    if (target.kind === 'item')  holdMs = POINT_HOLD_MS;
-    if (target.kind === 'nav')   holdMs = POINT_NAV_HOLD_MS;
-    if (target.kind === 'cat')   holdMs = POINT_CAT_HOLD_MS;
-    if (target.kind === 'voice') holdMs = POINT_VOICE_HOLD_MS;
-
-    const progress = Math.min(elapsed / holdMs, 1);
-    setProgressBarColor('hold');
-
-    if (target.kind === 'item') {
-      setProgressBar(0);
-      animateHoldRing(target.value, progress);
-    } else {
-      clearAllHoldRings();
-      setProgressBar(progress);
-    }
-
-    if (elapsed >= holdMs) {
-      if (target.kind === 'item') {
-        selectItem(target.value);
-        animateCardSelect(target.value);
-      } else if (target.kind === 'nav') {
-        sendNavigate(target.value);
-        showToast(target.value === 'right' ? 'Siguiente categoría ▶' : '◀ Categoría anterior');
-      } else if (target.kind === 'cat') {
-        socket.emit('gesture:set-category', { category: target.value });
-        const labels = { burgers: 'Hamburguesas', drinks: 'Bebidas', sides: 'Acompañamientos', desserts: 'Postres' };
-        showToast(labels[target.value] || target.value);
-      } else if (target.kind === 'voice') {
-        document.getElementById('voice-btn').click();
-      }
-      hidePointer();
-      triggerCooldown();
-    }
-    return;
-  }
-
-  if (activeGesture === 'point') {
-    pointTargetKey = null;
-    clearAllHoldRings();
-    hidePointer();
-  }
-
-  // Pulgar arriba → confirma o pasa al modal de pago.
-  if (gesture === 'thumb_up') {
-    const prog = updateHold('thumb_up', GESTURE_HOLD_MS);
-    setProgressBar(prog);
-    if (prog >= 1) {
-      sendConfirm();
-      showToast('Confirmado 👍');
-      triggerCooldown();
-    }
-    return;
-  }
-
-  // Palma abierta → cancela el último paso.
-  if (gesture === 'open_palm') {
-    const prog = updateHold('open_palm', GESTURE_HOLD_MS);
-    setProgressBar(prog);
-    if (prog >= 1) {
-      sendCancel();
-      showToast('Cancelado');
-      triggerCooldown();
-    }
-    return;
-  }
-
-  // Puño mantenido más tiempo → borra todo el pedido y empieza de cero.
-  if (gesture === 'fist') {
-    const prog = updateHold('fist', RESET_HOLD_MS);
-    setProgressBar(prog);
-    gestureLabel.textContent = 'reset ' + Math.round(prog * 100) + '%';
-    if (prog >= 1) {
-      socket.emit('session:reset');
-      showToast('Pedido eliminado');
-      triggerCooldown();
-    }
-    return;
-  }
-
-  if (gesture !== 'victory') {
-    activeGesture = null;
-    holdStart     = null;
-    setProgressBar(0);
-  }
-  hidePointer();
 }
 
 
@@ -770,53 +770,53 @@ let recognition;
 let voiceActive = false;
 
 function initVoice() {
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) { document.getElementById('voice-btn').style.opacity = '0.35'; return; }
-  recognition = new SR();
-  recognition.lang            = 'es-ES';
-  recognition.continuous      = true;
-  recognition.interimResults  = false;
-  recognition.maxAlternatives = 1;
-  recognition.onresult = (e) => {
-    const r = e.results[e.results.length - 1];
-    if (r.isFinal) socket.emit('voice:command', { transcript: r[0].transcript.trim() });
-  };
-  recognition.onerror = (e) => {
-    if (e.error !== 'no-speech' && e.error !== 'aborted') console.warn('[voz]', e.error);
-  };
-  // Reiniciamos automáticamente si el reconocimiento para en modo continuo.
-  recognition.onend = () => {
-    if (voiceActive) try { recognition.start(); } catch (_) {}
-  };
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { document.getElementById('voice-btn').style.opacity = '0.35'; return; }
+    recognition = new SR();
+    recognition.lang            = 'es-ES';
+    recognition.continuous      = true;
+    recognition.interimResults  = false;
+    recognition.maxAlternatives = 1;
+    recognition.onresult = (e) => {
+        const r = e.results[e.results.length - 1];
+        if (r.isFinal) socket.emit('voice:command', { transcript: r[0].transcript.trim() });
+    };
+    recognition.onerror = (e) => {
+        if (e.error !== 'no-speech' && e.error !== 'aborted') console.warn('[voz]', e.error);
+    };
+    // Reiniciamos automáticamente si el reconocimiento para en modo continuo.
+    recognition.onend = () => {
+        if (voiceActive) try { recognition.start(); } catch (_) {}
+    };
 }
 
 document.getElementById('voice-btn').addEventListener('click', () => {
-  if (!recognition) { showToast('Voz no disponible en este navegador'); return; }
-  voiceActive = !voiceActive;
-  if (voiceActive) {
-    try { recognition.start(); } catch (_) {}
-    document.getElementById('voice-label').textContent = 'Activa';
-    document.getElementById('voice-btn').classList.add('listening');
-    showToast('Voz activada. Di "hamburguesa", "agua", "confirmar"…');
-  } else {
-    recognition.stop();
-    document.getElementById('voice-label').textContent = 'Voz';
-    document.getElementById('voice-btn').classList.remove('listening');
-  }
+    if (!recognition) { showToast('Voz no disponible en este navegador'); return; }
+    voiceActive = !voiceActive;
+    if (voiceActive) {
+        try { recognition.start(); } catch (_) {}
+        document.getElementById('voice-label').textContent = 'Activa';
+        document.getElementById('voice-btn').classList.add('listening');
+        showToast('Voz activada. Di "hamburguesa", "agua", "confirmar"…');
+    } else {
+        recognition.stop();
+        document.getElementById('voice-label').textContent = 'Voz';
+        document.getElementById('voice-btn').classList.remove('listening');
+    }
 });
 
 function toggleCamera() {
-  cameraHidden = !cameraHidden;
-  document.getElementById('camera-container').classList.toggle('cam-hidden', cameraHidden);
+    cameraHidden = !cameraHidden;
+    document.getElementById('camera-container').classList.toggle('cam-hidden', cameraHidden);
 }
 
 // Punto de entrada: cargamos el menú, iniciamos MediaPipe y configuramos la voz.
 async function init() {
-  const res = await fetch('/api/menu');
-  menuData  = await res.json();
-  try { await initMediaPipe(); }
-  catch (e) { console.warn('MediaPipe no disponible:', e); statusText.textContent = 'Cámara no disponible'; }
-  initVoice();
+    const res = await fetch('/api/menu');
+    menuData  = await res.json();
+    try { await initMediaPipe(); }
+    catch (e) { console.warn('MediaPipe no disponible:', e); statusText.textContent = 'Cámara no disponible'; }
+    initVoice();
 }
 
 init();

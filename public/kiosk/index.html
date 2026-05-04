@@ -1,132 +1,132 @@
 <!DOCTYPE html>
 <html lang="es">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>TouchKiosk</title>
-  <link rel="stylesheet" href="/css/shared.css" />
-</head>
-<body>
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>TouchKiosk</title>
+        <link rel="stylesheet" href="/css/shared.css" />
+    </head>
+    <body>
 
-<!-- Pantalla de bienvenida -->
-<div id="overlay-idle" class="overlay active">
-  <div class="overlay-content">
-    <div class="idle-icon">👋</div>
-    <h1>Bienvenido</h1>
-    <p>Muestra la palma para comenzar</p>
-    <div class="idle-steps">
-      <span><b>1</b> Señala producto</span>
-      <span><b>2</b> Revisa pedido</span>
-      <span><b>3</b> Confirma con 👍</span>
-    </div>
-    <div class="pulse-ring"></div>
-  </div>
-</div>
+        <!-- Pantalla de bienvenida -->
+        <div id="overlay-idle" class="overlay active">
+            <div class="overlay-content">
+                <div class="idle-icon">👋</div>
+                <h1>Bienvenido</h1>
+                <p>Muestra la palma para comenzar</p>
+                <div class="idle-steps">
+                    <span><b>1</b> Señala producto</span>
+                    <span><b>2</b> Revisa pedido</span>
+                    <span><b>3</b> Confirma con 👍</span>
+                </div>
+                <div class="pulse-ring"></div>
+            </div>
+        </div>
 
-<!-- Pantalla de pedido confirmado -->
-<div id="overlay-done" class="overlay">
-  <div class="overlay-content">
-    <div class="done-icon">✅</div>
-    <h1>Pedido confirmado</h1>
-    <div class="order-number-label">Tu número de pedido</div>
-    <div class="order-number" id="done-number">--</div>
-    <p>Recoge en el mostrador</p>
-  </div>
-</div>
+        <!-- Pantalla de pedido confirmado -->
+        <div id="overlay-done" class="overlay">
+            <div class="overlay-content">
+                <div class="done-icon">✅</div>
+                <h1>Pedido confirmado</h1>
+                <div class="order-number-label">Tu número de pedido</div>
+                <div class="order-number" id="done-number">--</div>
+                <p>Recoge en el mostrador</p>
+            </div>
+        </div>
 
-<!-- Aplicación principal (oculta hasta mostrar palma de inicio) -->
-<div id="app" class="hidden">
+        <!-- Aplicación principal (oculta hasta mostrar palma de inicio) -->
+        <div id="app" class="hidden">
 
-  <header class="topbar">
-    <div class="logo">TouchKiosk</div>
-    <div class="gesture-status">
-      <span class="status-dot"></span>
-      <span id="status-text">Iniciando cámara...</span>
-    </div>
-    <div class="voice-btn" id="voice-btn" data-action="voice">
-      🎙️ <span id="voice-label">Voz</span>
-    </div>
-  </header>
+            <header class="topbar">
+                <div class="logo">TouchKiosk</div>
+                <div class="gesture-status">
+                    <span class="status-dot"></span>
+                    <span id="status-text">Iniciando cámara...</span>
+                </div>
+                <div class="voice-btn" id="voice-btn" data-action="voice">
+                    🎙️ <span id="voice-label">Voz</span>
+                </div>
+            </header>
 
-  <nav class="category-nav">
-    <button class="cat-btn active" data-cat="burgers" data-pointable="cat">Hamburguesas</button>
-    <button class="cat-btn"        data-cat="drinks"   data-pointable="cat">Bebidas</button>
-    <button class="cat-btn"        data-cat="sides"    data-pointable="cat">Acompañamientos</button>
-    <button class="cat-btn"        data-cat="desserts" data-pointable="cat">Postres</button>
-  </nav>
+            <nav class="category-nav">
+                <button class="cat-btn active" data-cat="burgers" data-pointable="cat">Hamburguesas</button>
+                <button class="cat-btn"        data-cat="drinks"   data-pointable="cat">Bebidas</button>
+                <button class="cat-btn"        data-cat="sides"    data-pointable="cat">Acompañamientos</button>
+                <button class="cat-btn"        data-cat="desserts" data-pointable="cat">Postres</button>
+            </nav>
 
-  <section class="flow-strip" aria-label="Pasos de uso">
-    <div class="flow-step"><span class="flow-dot">1</span><span>Señala y mantén</span></div>
-    <div class="flow-step"><span class="flow-dot">2</span><span>Cambia categoría con ◀ ▶ o ✌️</span></div>
-    <div class="flow-step"><span class="flow-dot">3</span><span>Palma cancela · Pulgar confirma</span></div>
-  </section>
+            <section class="flow-strip" aria-label="Pasos de uso">
+                <div class="flow-step"><span class="flow-dot">1</span><span>Señala y mantén</span></div>
+                <div class="flow-step"><span class="flow-dot">2</span><span>Cambia categoría con ◀ ▶ o ✌️</span></div>
+                <div class="flow-step"><span class="flow-dot">3</span><span>Palma cancela · Pulgar confirma</span></div>
+            </section>
 
-  <main class="content">
+            <main class="content">
 
-    <section class="menu-section">
-      <div class="menu-head">
-        <h2>Menú interactivo</h2>
-        <p>Señala y mantén sobre un producto para añadirlo</p>
-      </div>
-      <div class="menu-grid" id="menu-grid"></div>
-      <div class="nav-arrows">
-        <button class="arrow-btn" data-nav="left" onclick="sendNavigate('left')">◀</button>
-        <button class="arrow-btn" data-nav="right" onclick="sendNavigate('right')">▶</button>
-      </div>
-    </section>
+                <section class="menu-section">
+                    <div class="menu-head">
+                        <h2>Menú interactivo</h2>
+                        <p>Señala y mantén sobre un producto para añadirlo</p>
+                    </div>
+                    <div class="menu-grid" id="menu-grid"></div>
+                    <div class="nav-arrows">
+                        <button class="arrow-btn" data-nav="left" onclick="sendNavigate('left')">◀</button>
+                        <button class="arrow-btn" data-nav="right" onclick="sendNavigate('right')">▶</button>
+                    </div>
+                </section>
 
-    <aside class="order-panel">
-      <div class="order-panel-header">Tu pedido</div>
-      <div class="order-panel-sub">Puedes deshacer con palma o confirmar con pulgar.</div>
-      <div class="order-items" id="order-items">
-        <p class="empty-msg">Sin artículos todavía</p>
-      </div>
-      <div class="order-divider"></div>
-      <div class="order-total">
-        <span>Total</span>
-        <span class="order-total-amount" id="order-total-price">0.00 €</span>
-      </div>
-      <div class="order-actions">
-        <button class="btn-cancel"  onclick="sendCancel()">Cancelar</button>
-        <button class="btn-confirm" onclick="sendConfirm()">Confirmar</button>
-      </div>
-    </aside>
+                <aside class="order-panel">
+                    <div class="order-panel-header">Tu pedido</div>
+                    <div class="order-panel-sub">Puedes deshacer con palma o confirmar con pulgar.</div>
+                    <div class="order-items" id="order-items">
+                        <p class="empty-msg">Sin artículos todavía</p>
+                    </div>
+                    <div class="order-divider"></div>
+                    <div class="order-total">
+                        <span>Total</span>
+                        <span class="order-total-amount" id="order-total-price">0.00 €</span>
+                    </div>
+                    <div class="order-actions">
+                        <button class="btn-cancel"  onclick="sendCancel()">Cancelar</button>
+                        <button class="btn-confirm" onclick="sendConfirm()">Confirmar</button>
+                    </div>
+                </aside>
 
-  </main>
+            </main>
 
-  <!-- Modal de confirmación de pago -->
-  <div id="confirm-modal" class="modal hidden">
-    <div class="modal-box">
-      <h2>¿Confirmar pedido?</h2>
-      <div class="modal-total" id="modal-total-price"></div>
-      <p>Pulgar arriba para pagar · Palma abierta para cancelar</p>
-      <div class="modal-btns">
-        <button class="btn-cancel"  onclick="sendCancel()">Volver</button>
-        <button class="btn-confirm" onclick="sendConfirm()">Pagar</button>
-      </div>
-    </div>
-  </div>
+            <!-- Modal de confirmación de pago -->
+            <div id="confirm-modal" class="modal hidden">
+                <div class="modal-box">
+                    <h2>¿Confirmar pedido?</h2>
+                    <div class="modal-total" id="modal-total-price"></div>
+                    <p>Pulgar arriba para pagar · Palma abierta para cancelar</p>
+                    <div class="modal-btns">
+                        <button class="btn-cancel"  onclick="sendCancel()">Volver</button>
+                        <button class="btn-confirm" onclick="sendConfirm()">Pagar</button>
+                    </div>
+                </div>
+            </div>
 
-  <div id="toast"     class="toast hidden"></div>
-  <div id="voice-bar" class="voice-bar hidden">
-    🎙️ <span id="voice-transcript">Escuchando...</span>
-  </div>
+            <div id="toast"     class="toast hidden"></div>
+            <div id="voice-bar" class="voice-bar hidden">
+                🎙️ <span id="voice-transcript">Escuchando...</span>
+            </div>
 
-  <!-- Previsualización de la cámara con esqueleto de mano -->
-  <div class="camera-container" id="camera-container">
-    <video id="webcam" autoplay muted playsinline></video>
-    <canvas id="gesture-canvas"></canvas>
-    <div class="gesture-label" id="gesture-label">—</div>
-    <button class="cam-toggle" onclick="toggleCamera()">📷</button>
-  </div>
+            <!-- Previsualización de la cámara con esqueleto de mano -->
+            <div class="camera-container" id="camera-container">
+                <video id="webcam" autoplay muted playsinline></video>
+                <canvas id="gesture-canvas"></canvas>
+                <div class="gesture-label" id="gesture-label">—</div>
+                <button class="cam-toggle" onclick="toggleCamera()">📷</button>
+            </div>
 
-</div>
+        </div>
 
-<script src="/socket.io/socket.io.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"  crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"                crossorigin="anonymous"></script>
-<script src="/js/kiosk.js"></script>
-</body>
+        <script src="/socket.io/socket.io.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"  crossorigin="anonymous"></script>
+        <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+        <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+        <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"                crossorigin="anonymous"></script>
+        <script src="/js/kiosk.js"></script>
+    </body>
 </html>
